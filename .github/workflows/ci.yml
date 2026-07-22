@@ -25,6 +25,7 @@ jobs:
           AI_BASE_URL=http://ai-mock
           AI_API_KEY=demo-key
           AI_MODEL=mock-model
+          METRICS_TOKEN=ci-metrics-token
           EOF
 
       - name: Build and start services
@@ -58,6 +59,16 @@ jobs:
       - name: Run migrations
         run: docker compose exec -T app php bin/console doctrine:migrations:migrate --no-interaction
 
+      # PHPUnit: unit + functional. Тесты работают с отдельной БД contact_form_test
+      # (суффикс _test добавляет doctrine-bundle в APP_ENV=test; root, т.к. у app гранты только на contact_form.*)
+      - name: Backend tests (PHPUnit)
+        run: |
+          docker compose exec -T db mysql -uroot -prootsecret -e "CREATE DATABASE IF NOT EXISTS contact_form_test;"
+          docker compose exec -T -e APP_ENV=test \
+            -e "DATABASE_URL=mysql://root:rootsecret@db:3306/contact_form?serverVersion=8.0&charset=utf8mb4" \
+            app php bin/console doctrine:migrations:migrate --no-interaction
+          docker compose exec -T app php vendor/bin/phpunit
+
       - name: Smoke tests
         run: |
           set -e
@@ -76,7 +87,10 @@ jobs:
           check "GET /api/health" 200 http://localhost:8082/api/health
           grep -q '"db":"up"' /tmp/response.json
 
-          check "GET /api/metrics" 200 http://localhost:8082/api/metrics
+          check "GET /api/metrics without token" 401 http://localhost:8082/api/metrics
+
+          check "GET /api/metrics with token" 200 http://localhost:8082/api/metrics \
+            -H 'Authorization: Bearer ci-metrics-token'
 
           check "POST /api/contact valid" 201 -X POST http://localhost:8082/api/contact \
             -H 'Content-Type: application/json' \
