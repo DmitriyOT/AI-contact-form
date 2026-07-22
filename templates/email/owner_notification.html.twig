@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Новое обращение с сайта</title>
+</head>
+<body style="font-family: Arial, sans-serif; color: #222;">
+    <h2>Новое обращение с сайта</h2>
+    <p>Получено новое обращение через форму обратной связи.</p>
+    <table cellpadding="6" cellspacing="0" border="1" style="border-collapse: collapse; border-color: #ccc;">
+        <tr>
+            <th align="left">Имя</th>
+            <td>{{ contact.name }}</td>
+        </tr>
+        <tr>
+            <th align="left">Телефон</th>
+            <td>{{ contact.phone }}</td>
+        </tr>
+        <tr>
+            <th align="left">Email</th>
+            <td>{{ contact.email }}</td>
+        </tr>
+        <tr>
+            <th align="left">Обращение</th>
+            <td>{{ contact.comment|nl2br }}</td>
+        </tr>
+        <tr>
+            <th align="left">Дата и время</th>
+            <td>{{ date|date('d.m.Y H:i') }}</td>
+        </tr>
+    </table>
+    {% if ai %}
+        <h3>AI-анализ</h3>
+        <table cellpadding="6" cellspacing="0" border="1" style="border-collapse: collapse; border-color: #ccc;">
+            {% for key, value in ai %}
+                <tr>
+                    <th align="left">{{ key }}</th>
+                    <td>{{ value }}</td>
+                </tr>
+            {% endfor %}
+        </table>
+    {% endif %}
+</body>
+</html>

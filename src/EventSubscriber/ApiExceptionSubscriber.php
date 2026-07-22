@@ -78,6 +78,7 @@ final class ApiExceptionSubscriber implements EventSubscriberInterface
             Response::HTTP_UNSUPPORTED_MEDIA_TYPE => 'unsupported_media_type',
             Response::HTTP_UNPROCESSABLE_ENTITY => 'validation_failed',
             Response::HTTP_TOO_MANY_REQUESTS => 'too_many_requests',
+            Response::HTTP_BAD_GATEWAY => 'email_failed',
             default => 'http_error',
         };
     }

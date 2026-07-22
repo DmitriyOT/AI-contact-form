@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Мы получили ваше обращение</title>
+</head>
+<body style="font-family: Arial, sans-serif; color: #222;">
+    <h2>Здравствуйте, {{ contact.name }}!</h2>
+    <p>Мы получили ваше обращение и свяжемся с вами в ближайшее время.</p>
+    <p>Текст вашего обращения:</p>
+    <blockquote style="border-left: 3px solid #ccc; margin: 0; padding-left: 12px; color: #555;">
+        {{ contact.comment|nl2br }}
+    </blockquote>
+    <p style="color: #888; font-size: 12px;">Это автоматическое письмо, отвечать на него не нужно.</p>
+</body>
+</html>

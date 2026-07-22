@@ -9,6 +9,7 @@ final class ContactResult
     public function __construct(
         public readonly bool $accepted,
         public readonly string $message,
+        public readonly bool $emailSent = false,
     ) {
     }
 }
