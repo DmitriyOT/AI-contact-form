@@ -234,7 +234,15 @@ docker compose up -d --build web                                    # билд: 
 docker run --rm -v "$(pwd)/frontend:/app" -w /app node:20-alpine npm test   # прогон тестов (13 шт.)
 ```
 
-Тесты (Vitest + React Testing Library): клиентская валидация (пустая форма, невалидные поля), успешная отправка с очисткой формы, 422 с `details` под полями, 429 с блокировкой кнопки, сетевая ошибка, двойной сабмит, маппинг кодов в API-клиенте. Тесты являются частью `frontend/Dockerfile` — падающий тест ломает сборку образа.
+Тесты (Vitest + React Testing Library): клиентская валидация (пустая форма, невалидные поля, телефон без префикса `+7`/`8`), успешная отправка с очисткой формы, 422 с `details` под полями, 429 с блокировкой кнопки, сетевая ошибка, двойной сабмит, маппинг кодов в API-клиенте. Тесты являются частью `frontend/Dockerfile` — падающий тест ломает сборку образа.
+
+## CI/CD
+
+Пайплайн GitHub Actions — `.github/workflows/ci.yml` (триггер: push/PR в `main`):
+
+- **job `backend`** — поднимает всё окружение через `docker compose up -d --build app db mailer ai-mock` (перед этим создаётся `.env.local` под docker-сеть CI), ждёт готовности API, статические проверки (`composer validate`, `lint:container`), миграции и smoke-тесты curl'ом: health → 200 (`db:up`), metrics → 200, валидный POST → 201, `{}` → 422, телефон `9999999999` → 422. В конце — `docker compose down -v` (выполняется всегда).
+- **job `frontend`** — setup-node 20 (кэш npm по `frontend/package-lock.json`) → `npm ci` → `npx tsc --noEmit` → `npm test` → `npm run build`.
+- **job `deploy-template`** — шаблон будущего деплоя: сейчас отключён (`if: false`, шаги — плейсхолдеры, в Actions отображается как skipped, а не ошибка). Инструкция по активации — в комментарии в файле: заменить шаги на реальные (ssh/rsync на VPS, docker registry + pull, либо deploy-hook Render/Railway), секреты — в Settings → Secrets and variables → Actions.
 
 ## Деплой (кратко)
 

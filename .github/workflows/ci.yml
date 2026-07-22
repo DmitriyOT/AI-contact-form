@@ -1,0 +1,137 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Backend (Docker smoke tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # .env.local в репозитории нет (gitignored) — создаём его для docker-окружения CI:
+      # БД по имени сервиса, почта через Mailpit, AI через ai-mock
+      - name: Create .env.local for the Docker setup
+        run: |
+          cat > .env.local <<'EOF'
+          DATABASE_URL="mysql://app:secret@db:3306/contact_form?serverVersion=8.0&charset=utf8mb4"
+          MAILER_DSN=smtp://mailer:1025
+          MAIL_FROM=noreply@example.com
+          MAIL_OWNER_EMAIL=owner@example.com
+          AI_BASE_URL=http://ai-mock
+          AI_API_KEY=demo-key
+          AI_MODEL=mock-model
+          EOF
+
+      - name: Build and start services
+        run: docker compose up -d --build app db mailer ai-mock
+
+      - name: Wait for the API to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8082/api/health > /dev/null 2>&1; then
+              echo "API is up"
+              exit 0
+            fi
+            echo "waiting for API... ($i)"
+            sleep 3
+          done
+          echo "API did not become ready in time"
+          docker compose logs app db
+          exit 1
+
+      - name: Static checks (composer validate, lint:container)
+        run: |
+          docker compose exec -T app composer validate --no-check-publish
+          docker compose exec -T app php bin/console lint:container
+
+      - name: Run migrations
+        run: docker compose exec -T app php bin/console doctrine:migrations:migrate --no-interaction
+
+      - name: Smoke tests
+        run: |
+          set -e
+
+          check() { # <description> <expected_status> <curl args...>
+            description="$1"; expected="$2"; shift 2
+            status=$(curl -s -o /tmp/response.json -w '%{http_code}' "$@")
+            if [ "$status" != "$expected" ]; then
+              echo "FAIL: $description — expected $expected, got $status"
+              cat /tmp/response.json
+              exit 1
+            fi
+            echo "OK: $description ($status)"
+          }
+
+          check "GET /api/health" 200 http://localhost:8082/api/health
+          grep -q '"db":"up"' /tmp/response.json
+
+          check "GET /api/metrics" 200 http://localhost:8082/api/metrics
+
+          check "POST /api/contact valid" 201 -X POST http://localhost:8082/api/contact \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"CI Test","phone":"+7 900 123-45-67","email":"ci@example.com","comment":"Smoke test from CI pipeline."}'
+
+          check "POST /api/contact empty body" 422 -X POST http://localhost:8082/api/contact \
+            -H 'Content-Type: application/json' -d '{}'
+
+          check "POST /api/contact invalid phone" 422 -X POST http://localhost:8082/api/contact \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"CI Test","phone":"9999999999","email":"ci@example.com","comment":"Smoke test from CI pipeline."}'
+          grep -q 'Введите телефон' /tmp/response.json
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
+
+  frontend:
+    name: Frontend (lint, tests, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  # Шаблон деплоя — НЕ реальный деплой.
+  # Job намеренно пропускается (if: false), чтобы не светиться ошибкой в Actions.
+  # Когда появится сервер, замените шаги на реальные и уберите if: false, например:
+  #   вариант 1 (SSH):  rsync репозитория на VPS + ssh "cd app && docker compose pull && docker compose up -d --build"
+  #   вариант 2 (registry): docker build/push образов в registry (GHCR/Docker Hub) + ssh "docker compose pull && up -d"
+  #   вариант 3 (Render/Railway): деплой-хук провайдера (curl на deploy hook URL из secrets)
+  # Секреты (SSH key, registry token) хранить в Settings → Secrets and variables → Actions.
+  deploy-template:
+    name: Deploy (template, disabled)
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    if: false # включить при появлении сервера; триггер — только main (push)
+    steps:
+      - name: Placeholder — заменить на реальный деплой (см. комментарий выше)
+        if: false
+        run: 'echo "TODO: deploy step (ssh/rsync или docker registry + pull)"'
+
+      - name: Placeholder — post-deploy health check
+        if: false
+        run: 'echo "TODO: curl https://<prod-domain>/api/health"'
