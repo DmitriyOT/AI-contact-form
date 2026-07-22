@@ -1,5 +1,7 @@
 # Contact Form API
 
+[![CI](https://github.com/DmitriyOT/AI-contact-form/actions/workflows/ci.yml/badge.svg)](https://github.com/DmitriyOT/AI-contact-form/actions/workflows/ci.yml)
+
 REST API формы обратной связи с AI-анализом обращений (тональность + классификация) на Symfony 7.4. Тестовое задание на позицию backend-разработчика.
 
 ## 1. Как запустить
