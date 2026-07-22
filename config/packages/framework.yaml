@@ -2,6 +2,12 @@
 framework:
     secret: '%env(APP_SECRET)%'
 
+    # Client-IP resolution behind a reverse proxy (rate limiting is keyed by IP).
+    # Empty = disabled (direct connections). Set to the proxy IP/subnet in prod;
+    # REMOTE_ADDR trusts the direct peer — convenient in Docker, but then clients
+    # hitting the app port directly can spoof X-Forwarded-For.
+    trusted_proxies: '%env(TRUSTED_PROXIES)%'
+
     # Note that the session will be started ONLY if you read or write from it.
     session: true
 
