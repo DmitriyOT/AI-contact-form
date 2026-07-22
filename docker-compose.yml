@@ -1,0 +1,33 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      # host port 8082 because 8080 is occupied by another local project
+      - "8082:8080"
+    volumes:
+      - .:/var/www/html
+    # .env / .env.local are loaded by Symfony Dotenv from the mounted code
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: mysql:8
+    environment:
+      MYSQL_DATABASE: ${DB_NAME:-contact_form}
+      MYSQL_USER: ${DB_USER:-app}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-secret}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-rootsecret}
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p$${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+volumes:
+  db_data:
