@@ -30,10 +30,16 @@ jobs:
       - name: Build and start services
         run: docker compose up -d --build app db mailer ai-mock
 
+      # vendor/ не в репозитории, а код монтируется в контейнер volume'ом —
+      # зависимости ставим внутри контейнера после монтирования
+      - name: Install composer dependencies
+        run: docker compose exec -T app composer install --no-interaction --no-progress
+
       - name: Wait for the API to be ready
         run: |
           for i in $(seq 1 30); do
-            if curl -sf http://localhost:8082/api/health > /dev/null 2>&1; then
+            # php -S отдаёт фатальные ошибки со статусом 200 — проверяем именно тело ответа
+            if curl -s http://localhost:8082/api/health 2>/dev/null | grep -q '"db":"up"'; then
               echo "API is up"
               exit 0
             fi
