@@ -23,7 +23,7 @@ final class ContactMailer
     }
 
     /**
-     * @param array<string, string>|null $aiData AI analysis data (commit 7), rendered only when present
+     * @param array<string, string>|null $aiData AI analysis data, rendered only when present
      */
     public function sendOwnerNotification(ContactRequest $contact, ?array $aiData = null): void
     {

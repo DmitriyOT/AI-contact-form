@@ -57,6 +57,6 @@ final class ContactService
         // no personal data in the log, just the fact of acceptance
         $this->logger->info('Contact request accepted', ['id' => $contactId, 'ai' => null !== $aiData]);
 
-        return new ContactResult(true, 'Обращение принято', true, null !== $aiData);
+        return new ContactResult(true, 'Обращение принято', null !== $aiData);
     }
 }
