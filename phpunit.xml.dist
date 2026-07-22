@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="tests/bootstrap.php"
+         colors="true"
+         cacheDirectory="var/phpunit"
+         failOnWarning="true"
+         failOnNotice="true">
+    <testsuites>
+        <testsuite name="unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+        <testsuite name="functional">
+            <directory>tests/Functional</directory>
+        </testsuite>
+    </testsuites>
+    <php>
+        <!-- env for the test kernel; real env vars win over .env/.env.local -->
+        <env name="KERNEL_CLASS" value="App\Kernel"/>
+        <env name="APP_ENV" value="test" force="true"/>
+        <env name="APP_DEBUG" value="1" force="true"/>
+        <!-- separate database (test env appends "_test" via dbname_suffix), root user: the app MySQL user has grants on contact_form.* only -->
+        <env name="DATABASE_URL" value="mysql://root:rootsecret@db:3306/contact_form?serverVersion=8.0&amp;charset=utf8mb4" force="true"/>
+        <env name="MAILER_DSN" value="null://null" force="true"/>
+        <env name="AI_API_KEY" value="" force="true"/>
+        <env name="METRICS_TOKEN" value="test-metrics-token" force="true"/>
+        <env name="RATE_LIMIT_MAX" value="100" force="true"/>
+        <env name="TRUSTED_PROXIES" value="" force="true"/>
+    </php>
+    <source>
+        <include>
+            <directory>src</directory>
+        </include>
+    </source>
+</phpunit>
