@@ -3,7 +3,8 @@ import type { ContactPayload } from './api/contact';
 export type FieldErrors = Partial<Record<keyof ContactPayload, string>>;
 
 // зеркалит правила бэкенда (src/Dto/ContactRequest.php)
-export const PHONE_PATTERN = /^\+?[0-9\s\-()]{10,20}$/;
+// российский формат: +7 или 8, далее ровно 10 цифр, между ними пробелы/скобки/дефисы
+export const PHONE_PATTERN = /^(\+7|8)[\s\-(]*\d{3}[\s\)-]*\d{3}[\s-]*\d{2}[\s-]*\d{2}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function validateContact(values: ContactPayload): FieldErrors {
@@ -20,7 +21,7 @@ export function validateContact(values: ContactPayload): FieldErrors {
   if (!phone) {
     errors.phone = 'Укажите телефон';
   } else if (!PHONE_PATTERN.test(phone)) {
-    errors.phone = 'Некорректный номер телефона';
+    errors.phone = 'Введите телефон в формате +7 900 123-45-67';
   }
 
   const email = values.email.trim();

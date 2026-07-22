@@ -21,8 +21,8 @@ final class ContactRequest
     #[Assert\NotBlank(message: 'Укажите телефон')]
     #[Assert\Type(type: 'string', message: 'Телефон должен быть строкой')]
     #[Assert\Regex(
-        pattern: '/^\+?[0-9\s\-\(\)]{10,20}$/',
-        message: 'Некорректный номер телефона'
+        pattern: '/^(\+7|8)[\s\-\(]*\d{3}[\s\-\)]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}$/',
+        message: 'Введите телефон в формате +7 900 123-45-67'
     )]
     public mixed $phone = null;
 
