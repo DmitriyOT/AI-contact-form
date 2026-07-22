@@ -34,6 +34,8 @@ AI_BASE_URL=http://ai-mock
 AI_API_KEY=demo-key
 AI_MODEL=mock-model
 MAILER_DSN=smtp://mailer:1025
+METRICS_TOKEN=dev-metrics-token
+TRUSTED_PROXIES=REMOTE_ADDR
 ```
 
 | Переменная | Назначение | Дефолт (.env) |
@@ -47,6 +49,8 @@ MAILER_DSN=smtp://mailer:1025
 | `AI_MODEL` | Модель | `gpt-4o-mini` |
 | `RATE_LIMIT_MAX` | Лимит запросов на IP | `5` |
 | `RATE_LIMIT_WINDOW` | Окно лимита, секунд | `3600` |
+| `METRICS_TOKEN` | Bearer-токен для `/api/metrics` (пусто = эндпоинт выключен, 403) | пусто |
+| `TRUSTED_PROXIES` | Доверенные прокси для определения IP клиента (rate limiting) | пусто |
 | `CORS_ALLOW_ORIGIN` | Regex разрешённых Origin | `^https?://localhost(:[0-9]+)?$` |
 
 Полезные команды:
@@ -89,7 +93,7 @@ src/
 ├── Controller/
 │   ├── ContactController.php      # POST /api/contact: rate limit → Content-Type → JSON → DTO → валидация → сервис
 │   ├── HealthController.php       # GET /api/health: SELECT 1 по БД (200/503)
-│   └── MetricsController.php      # GET /api/metrics: живые счётчики из репозитория
+│   └── MetricsController.php      # GET /api/metrics: Bearer-авторизация + живые счётчики
 ├── Dto/
 │   ├── ContactRequest.php         # DTO входа: констрейнты + маппинг/санитизация из JSON
 │   └── ContactResult.php          # Результат сервиса (accepted/emailSent/aiProcessed)
@@ -105,6 +109,12 @@ src/
     ├── ContactService.php         # Оркестрация: AI → save → email владельцу → копия пользователю
     ├── ContactMailer.php          # Письма через TemplatedEmail
     └── AiAnalyzer.php             # AI-анализ (тональность + категория), graceful fallback
+
+tests/
+├── Unit/                        # PHPUnit без ядра: DTO/валидация, AiAnalyzer (MockHttpClient),
+│                                # ContactService (моки Connection/Mailer), MetricsController (авторизация)
+└── Functional/                  # WebTestCase против тестовой БД: контракт /api/contact (201/400/415/422/405),
+                                 # /api/health, /api/metrics (401/200 и живые счётчики)
 ```
 
 Frontend (`frontend/`):
@@ -133,6 +143,8 @@ frontend/
   - копия письма пользователю не отправилась → warning, 201;
   - критичен только email владельцу: его сбой → 502.
 - **Файловый rate limiter** — требование задания допускает файловое кеширование; storage не нужен за пределами одного инстанса, Redis избыточен. Consume — до валидации: спам мусорными телами тоже тратит лимит.
+- **Определение IP клиента** — rate limiting ключуется по IP, поэтому за reverse-proxy включается `TRUSTED_PROXIES` (env): в Docker — `REMOTE_ADDR` (доверяем непосредственному пиру — nginx), в проде — конкретный IP/подсеть прокси. Важно: при `REMOTE_ADDR` клиент, стучащийся в порт приложения напрямую (минуя прокси), может подделать `X-Forwarded-For` — в проде порт приложения не должен быть доступен снаружи, либо используйте точный IP прокси.
+- **Закрытые метрики** — `/api/metrics` требует `Authorization: Bearer <METRICS_TOKEN>` (сравнение через `hash_equals`, без тайминг-атак); пустой `METRICS_TOKEN` полностью выключает эндпоинт (403) — безопасный дефолт.
 - **DI/autowiring** — стандартный `services.yaml`, env-параметры через `#[Autowire('%env(...)%')]`.
 
 ## 4. Реализация API
@@ -141,7 +153,7 @@ frontend/
 |---|---|---|
 | POST | `/api/contact` | Приём обращения (rate limit по IP: 5/час) |
 | GET | `/api/health` | Health-check (проверяет MySQL) |
-| GET | `/api/metrics` | Статистика обращений из БД |
+| GET | `/api/metrics` | Статистика обращений из БД (закрыт Bearer-токеном `METRICS_TOKEN`) |
 
 Спецификация: `docs/openapi.yaml` (OpenAPI 3.0), просмотр — Swagger UI на http://localhost:8083. Примеры: `docs/examples.sh`, `docs/postman_collection.json`.
 
@@ -161,14 +173,17 @@ text/plain → 415 {"error":{"code":"unsupported_media_type","message":"Ожид
 сбой SMTP → 502 {"error":{"code":"email_failed","message":"Не удалось отправить уведомление, попробуйте позже"}}
 
 GET /api/health  → 200 {"status":"ok","db":"up"}  |  503 {"status":"error","db":"down"}
-GET /api/metrics → 200 {"status":"ok","metrics":{"total":10,"today":10,"last_7_days":{"2026-07-22":10}}}
+GET /api/metrics (без токена)        → 401 {"error":{"code":"unauthorized",...}} + WWW-Authenticate: Bearer
+GET /api/metrics (METRICS_TOKEN пуст) → 403 {"error":{"code":"forbidden","message":"Метрики отключены: не задан METRICS_TOKEN"}}
+GET /api/metrics -H 'Authorization: Bearer dev-metrics-token'
+                 → 200 {"status":"ok","metrics":{"total":10,"today":10,"last_7_days":{"2026-07-22":10}}}
 ```
 
 Валидация: name 2–100, phone — российский формат: префикс `+7` или `8`, далее ровно 10 цифр, допускаются пробелы/скобки/дефисы (`+7 900 123-45-67`, `8(900)123-45-67`), email — strict (egulias), comment 10–2000. Неизвестные поля в JSON игнорируются.
 
 ## 5. AI-интеграция
 
-Две функции одним запросом к OpenAI-совместимому Chat Completions API: **тональность** (`positive|neutral|negative`) и **классификация типа обращения** (`вопрос|заказ|жалоба|предложение|сотрудничество|другое`) + краткое резюме. Результат сохраняется в БД (`ai_sentiment`, `ai_category`) и включается в письмо владельцу (блок «AI-анализ»).
+Две функции одним запросом к OpenAI-совместимому Chat Completions API: **тональность** (`positive|neutral|negative`) и **классификация типа обращения** (`вопрос|заказ|жалоба|предложение|сотрудничество|другое`) + краткое резюме. Результат сохраняется в БД (`ai_sentiment`, `ai_category`, `ai_summary`) и включается в письмо владельцу (блок «AI-анализ»).
 
 Промпт (system message, полный текст):
 
@@ -217,10 +232,11 @@ GET /api/metrics → 200 {"status":"ok","metrics":{"total":10,"today":10,"last_7
 | comment | TEXT | HTML не вырезается, экранируется при выводе |
 | ai_sentiment | VARCHAR(20) NULL | positive/neutral/negative |
 | ai_category | VARCHAR(50) NULL | тип обращения |
+| ai_summary | VARCHAR(255) NULL | резюме от AI (обрезается до 200 символов) |
 | ip_address | VARCHAR(45) NULL | IPv4/IPv6 |
 | created_at | DATETIME DEFAULT CURRENT_TIMESTAMP | индекс |
 
-- **Логи** (`var/log/`, вне git): `access.log` — все запросы (метод, путь, статус, IP, длительность; канал `access`), `dev.log`/`prod.log` — ошибки и события приложения (канал app; stack trace исключений).
+- **Логи** (`var/log/`, вне git): `access.log` — все запросы (метод, путь, статус, IP, длительность; канал `access`), `dev.log`/`prod.log` — ошибки и события приложения (канал app; stack trace исключений). В prod-окружении логи пишутся в файлы (`prod.log`, `deprecations.log`) в формате JSON-lines — в контейнере `var/log` стоит смонтировать volume'ом, чтобы логи переживали пересоздание контейнера.
 - **Rate limiting** — файловый кеш-пул `cache.rate_limiter` (var/share/.../pools); сброс: `bin/console cache:pool:clear cache.rate_limiter`.
 - **Статистика** `/api/metrics` — из БД на лету, без отдельного хранилища.
 - **Email** в dev — Mailpit (in-memory), в проде — реальный SMTP через `MAILER_DSN`.
@@ -233,16 +249,33 @@ GET /api/metrics → 200 {"status":"ok","metrics":{"total":10,"today":10,"last_7
 
 ```bash
 docker compose up -d --build web                                    # билд: npm ci → тесты → vite build → nginx
-docker run --rm -v "$(pwd)/frontend:/app" -w /app node:20-alpine npm test   # прогон тестов (13 шт.)
+docker run --rm -v "$(pwd)/frontend:/app" -w /app node:20-alpine npm test   # прогон тестов (49 шт.)
 ```
 
-Тесты (Vitest + React Testing Library): клиентская валидация (пустая форма, невалидные поля, телефон без префикса `+7`/`8`), успешная отправка с очисткой формы, 422 с `details` под полями, 429 с блокировкой кнопки, сетевая ошибка, двойной сабмит, маппинг кодов в API-клиенте. Тесты являются частью `frontend/Dockerfile` — падающий тест ломает сборку образа.
+Тесты (Vitest + React Testing Library): клиентская валидация (пустая форма, невалидные поля, границы длин, телефон без префикса `+7`/`8`), успешная отправка с очисткой формы, blur-валидация с aria-атрибутами, 422 с `details` под полями, 429 с блокировкой кнопки и дефолтным `Retry-After`, 502/сетевая ошибка, двойной сабмит, маппинг кодов в API-клиенте. Тесты являются частью `frontend/Dockerfile` — падающий тест ломает сборку образа.
+
+## Тесты бэкенда
+
+PHPUnit (49 тестов: unit + functional), конфиг — `phpunit.xml.dist`. Unit-тесты не требуют окружения; функциональные (`WebTestCase`) работают против отдельной БД `contact_form_test` в docker-сети (суффикс `_test` добавляет doctrine-bundle в `APP_ENV=test`; подключение под root, т.к. у пользователя `app` гранты только на `contact_form.*`).
+
+```bash
+# одноразовая подготовка тестовой БД
+docker compose exec db mysql -uroot -prootsecret -e "CREATE DATABASE IF NOT EXISTS contact_form_test;"
+docker compose exec -e APP_ENV=test \
+  -e "DATABASE_URL=mysql://root:rootsecret@db:3306/contact_form?serverVersion=8.0&charset=utf8mb4" \
+  app php bin/console doctrine:migrations:migrate --no-interaction
+
+# прогон
+docker compose exec app php vendor/bin/phpunit
+```
+
+Покрытие: валидация и санитизация DTO (границы длин, форматы телефонов, нестроковые типы), `AiAnalyzer` (валидный ответ, markdown-обёртки, мусорный JSON, 5xx, таймаут, обрезка summary, пустой ключ), `ContactService` (деградация БД/почты, 502 при сбое письма владельцу), авторизация `/api/metrics`, HTTP-контракт `/api/contact` (201/400/405/415/422), `/api/health`.
 
 ## CI/CD
 
 Пайплайн GitHub Actions — `.github/workflows/ci.yml` (триггер: push/PR в `main`):
 
-- **job `backend`** — поднимает всё окружение через `docker compose up -d --build app db mailer ai-mock` (перед этим создаётся `.env.local` под docker-сеть CI), ждёт готовности API, статические проверки (`composer validate`, `lint:container`), миграции и smoke-тесты curl'ом: health → 200 (`db:up`), metrics → 200, валидный POST → 201, `{}` → 422, телефон `9999999999` → 422. В конце — `docker compose down -v` (выполняется всегда).
+- **job `backend`** — поднимает всё окружение через `docker compose up -d --build app db mailer ai-mock` (перед этим создаётся `.env.local` под docker-сеть CI), ждёт готовности API, статические проверки (`composer validate`, `lint:container`), миграции, **PHPUnit (unit + functional против тестовой БД `contact_form_test`)** и smoke-тесты curl'ом: health → 200 (`db:up`), metrics без токена → 401, metrics с токеном → 200, валидный POST → 201, `{}` → 422, телефон `9999999999` → 422. В конце — `docker compose down -v` (выполняется всегда).
 - **job `frontend`** — setup-node 20 (кэш npm по `frontend/package-lock.json`) → `npm ci` → `npx tsc --noEmit` → `npm test` → `npm run build`.
 - **job `deploy-template`** — шаблон будущего деплоя: сейчас отключён (`if: false`, шаги — плейсхолдеры, в Actions отображается как skipped, а не ошибка). Инструкция по активации — в комментарии в файле: заменить шаги на реальные (ssh/rsync на VPS, docker registry + pull, либо deploy-hook Render/Railway), секреты — в Settings → Secrets and variables → Actions.
 
