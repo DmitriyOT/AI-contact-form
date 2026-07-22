@@ -31,9 +31,9 @@ jobs:
         run: docker compose up -d --build app db mailer ai-mock
 
       # vendor/ не в репозитории, а код монтируется в контейнер volume'ом —
-      # зависимости ставим внутри контейнера после монтирования
+      # зависимости ставим через образ composer:2 (в нём есть git/zip), как и локально
       - name: Install composer dependencies
-        run: docker compose exec -T app composer install --no-interaction --no-progress
+        run: docker run --rm -v "$PWD:/app" -w /app composer:2 install --no-interaction --no-progress
 
       - name: Wait for the API to be ready
         run: |
