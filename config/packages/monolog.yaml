@@ -47,8 +47,10 @@ when@prod:
                 channels: ["!deprecation", "!access"]
                 buffer_size: 50 # How many messages should be saved? Prevent memory leaks
             nested:
+                # file logging per the project requirements; JSON lines are greppable
+                # (var/log should be a mounted volume on the host to survive container restarts)
                 type: stream
-                path: php://stderr
+                path: "%kernel.logs_dir%/%kernel.environment%.log"
                 level: debug
                 formatter: monolog.formatter.json
             console:
@@ -58,5 +60,5 @@ when@prod:
             deprecation:
                 type: stream
                 channels: [deprecation]
-                path: php://stderr
+                path: "%kernel.logs_dir%/deprecations.log"
                 formatter: monolog.formatter.json
