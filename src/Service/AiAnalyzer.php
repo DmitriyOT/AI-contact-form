@@ -135,7 +135,8 @@ final class AiAnalyzer
         return [
             'sentiment' => $sentiment,
             'category' => in_array($category, self::CATEGORIES, true) ? $category : 'другое',
-            'summary' => is_string($summary) && '' !== $summary ? $summary : '',
+            // models sometimes exceed the 200-char prompt limit; the DB column is VARCHAR(255)
+            'summary' => is_string($summary) && '' !== $summary ? mb_substr($summary, 0, 200) : '',
         ];
     }
 }

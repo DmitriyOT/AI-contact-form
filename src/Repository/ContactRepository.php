@@ -14,15 +14,15 @@ final class ContactRepository
     }
 
     /**
-     * @param array{sentiment?: string, category?: string}|null $aiData AI analysis data (commit 7)
+     * @param array{sentiment?: string, category?: string, summary?: string}|null $aiData AI analysis data
      *
      * @return int id of the inserted row
      */
     public function save(ContactRequest $contact, ?string $ip, ?array $aiData = null): int
     {
         $this->connection->executeStatement(
-            'INSERT INTO contacts (name, phone, email, comment, ai_sentiment, ai_category, ip_address)
-             VALUES (:name, :phone, :email, :comment, :ai_sentiment, :ai_category, :ip_address)',
+            'INSERT INTO contacts (name, phone, email, comment, ai_sentiment, ai_category, ai_summary, ip_address)
+             VALUES (:name, :phone, :email, :comment, :ai_sentiment, :ai_category, :ai_summary, :ip_address)',
             [
                 'name' => $contact->name,
                 'phone' => $contact->phone,
@@ -30,6 +30,7 @@ final class ContactRepository
                 'comment' => $contact->comment,
                 'ai_sentiment' => $aiData['sentiment'] ?? null,
                 'ai_category' => $aiData['category'] ?? null,
+                'ai_summary' => $aiData['summary'] ?? null,
                 'ip_address' => $ip,
             ]
         );
