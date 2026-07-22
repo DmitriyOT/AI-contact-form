@@ -144,7 +144,12 @@ paths:
     get:
       tags: [system]
       summary: Статистика обращений
-      description: Живые счётчики из БД (без кэширования).
+      description: |
+        Живые счётчики из БД (без кэширования). Эндпоинт закрыт Bearer-токеном
+        (`Authorization: Bearer <METRICS_TOKEN>`). Если `METRICS_TOKEN` не задан
+        в окружении, эндпоинт выключен и отвечает 403.
+      security:
+        - bearerAuth: []
       responses:
         '200':
           description: Метрики
@@ -159,6 +164,32 @@ paths:
                   today: 10
                   last_7_days:
                     2026-07-22: 10
+        '401':
+          description: Токен отсутствует или неверен
+          headers:
+            WWW-Authenticate:
+              description: Схема авторизации
+              schema:
+                type: string
+                example: Bearer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: unauthorized
+                  message: 'Требуется авторизация: Authorization: Bearer <token>'
+        '403':
+          description: Эндпоинт выключен (METRICS_TOKEN не задан)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: forbidden
+                  message: 'Метрики отключены: не задан METRICS_TOKEN'
         '503':
           description: БД недоступна, метрики не собраны
           content:
@@ -170,6 +201,11 @@ paths:
                   code: service_unavailable
                   message: Метрики временно недоступны
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Токен из переменной окружения METRICS_TOKEN
   schemas:
     ContactRequest:
       type: object

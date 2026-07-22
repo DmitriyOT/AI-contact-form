@@ -6,8 +6,12 @@ namespace App\Controller;
 
 use App\Repository\ContactRepository;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\ServiceUnavailableHttpException;
+use Symfony\Component\HttpKernel\Exception\UnauthorizedHttpException;
 use Symfony\Component\Routing\Attribute\Route;
 use Throwable;
 
@@ -16,12 +20,25 @@ final class MetricsController
     public function __construct(
         private readonly ContactRepository $contactRepository,
         private readonly LoggerInterface $logger,
+        #[Autowire('%env(METRICS_TOKEN)%')]
+        private readonly string $metricsToken,
     ) {
     }
 
     #[Route('/api/metrics', name: 'api_metrics', methods: ['GET'])]
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
+        // an empty token means the endpoint is disabled entirely (safe default)
+        if ('' === $this->metricsToken) {
+            throw new AccessDeniedHttpException('Метрики отключены: не задан METRICS_TOKEN');
+        }
+
+        $authorization = (string) $request->headers->get('Authorization', '');
+        $token = str_starts_with($authorization, 'Bearer ') ? substr($authorization, 7) : '';
+        if ('' === $token || !hash_equals($this->metricsToken, $token)) {
+            throw new UnauthorizedHttpException('Bearer', 'Требуется авторизация: Authorization: Bearer <token>');
+        }
+
         try {
             $metrics = [
                 'total' => $this->contactRepository->countAll(),

@@ -8,6 +8,10 @@
     {
       "key": "baseUrl",
       "value": "http://localhost:8082"
+    },
+    {
+      "key": "metricsToken",
+      "value": "dev-metrics-token"
     }
   ],
   "item": [
@@ -19,10 +23,14 @@
       }
     },
     {
-      "name": "Metrics",
+      "name": "Metrics (Bearer)",
       "request": {
         "method": "GET",
-        "url": "{{baseUrl}}/api/metrics"
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{metricsToken}}" }
+        ],
+        "url": "{{baseUrl}}/api/metrics",
+        "description": "Требуется заголовок Authorization: Bearer <METRICS_TOKEN>. Без токена — 401; если METRICS_TOKEN пуст в .env — эндпоинт выключен (403)."
       }
     },
     {
