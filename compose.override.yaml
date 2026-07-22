@@ -9,3 +9,10 @@ services:
       MP_SMTP_AUTH_ACCEPT_ANY: 1
       MP_SMTP_AUTH_ALLOW_INSECURE: 1
 ###< symfony/mailer ###
+
+  # AI mock server — ONLY for local development and demo purposes.
+  # Imitates an OpenAI-compatible API; point AI_BASE_URL=http://ai-mock in .env.local.
+  ai-mock:
+    build:
+      context: ./docker/ai-mock
+    restart: unless-stopped

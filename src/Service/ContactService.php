@@ -17,6 +17,7 @@ final class ContactService
     public function __construct(
         private readonly ContactRepository $contactRepository,
         private readonly ContactMailer $contactMailer,
+        private readonly AiAnalyzer $aiAnalyzer,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -24,10 +25,12 @@ final class ContactService
     public function handle(ContactRequest $request, ?string $ip = null): ContactResult
     {
         // rate limiting is enforced in ContactController before this service runs
-        // TODO (commit 7): AI processing of the comment, pass $aiData to save() and sendOwnerNotification()
+
+        // AI analysis is best-effort: null on any failure, the request must never fail because of AI
+        $aiData = $this->aiAnalyzer->analyze($request->comment);
 
         try {
-            $contactId = $this->contactRepository->save($request, $ip);
+            $contactId = $this->contactRepository->save($request, $ip, $aiData);
             $this->logger->info('Contact request persisted', ['id' => $contactId]);
         } catch (Throwable $e) {
             // persistence failure must not break the user flow: the email still goes out
@@ -36,7 +39,7 @@ final class ContactService
         }
 
         try {
-            $this->contactMailer->sendOwnerNotification($request);
+            $this->contactMailer->sendOwnerNotification($request, $aiData);
         } catch (TransportExceptionInterface $e) {
             // owner notification is critical: fail the whole request
             $this->logger->error('Failed to send owner notification', ['exception' => $e]);
@@ -52,8 +55,8 @@ final class ContactService
         }
 
         // no personal data in the log, just the fact of acceptance
-        $this->logger->info('Contact request accepted', ['id' => $contactId]);
+        $this->logger->info('Contact request accepted', ['id' => $contactId, 'ai' => null !== $aiData]);
 
-        return new ContactResult(true, 'Обращение принято', true);
+        return new ContactResult(true, 'Обращение принято', true, null !== $aiData);
     }
 }

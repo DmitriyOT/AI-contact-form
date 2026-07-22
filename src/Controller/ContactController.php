@@ -75,6 +75,7 @@ final class ContactController
         $response = new JsonResponse([
             'status' => 'accepted',
             'message' => $result->message,
+            'ai' => $result->aiProcessed,
         ], JsonResponse::HTTP_CREATED);
         $response->setEncodingOptions(JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 

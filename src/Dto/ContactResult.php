@@ -10,6 +10,7 @@ final class ContactResult
         public readonly bool $accepted,
         public readonly string $message,
         public readonly bool $emailSent = false,
+        public readonly bool $aiProcessed = false,
     ) {
     }
 }

@@ -1,0 +1,141 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Service;
+
+use Psr\Log\LoggerInterface;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
+use Symfony\Contracts\HttpClient\Exception\DecodingExceptionInterface;
+use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
+use Symfony\Contracts\HttpClient\HttpClientInterface;
+
+final class AiAnalyzer
+{
+    private const SENTIMENTS = ['positive', 'neutral', 'negative'];
+    private const CATEGORIES = ['вопрос', 'заказ', 'жалоба', 'предложение', 'сотрудничество', 'другое'];
+    private const TIMEOUT_SECONDS = 10;
+
+    private const PROMPT = <<<'PROMPT'
+        Ты — помощник службы поддержки. Проанализируй обращение клиента и ответь СТРОГО одним JSON-объектом без пояснений и markdown-обёрток:
+        {"sentiment":"...","category":"...","summary":"..."}
+
+        Правила:
+        - sentiment — тональность обращения, ровно одно из значений: "positive", "neutral", "negative".
+        - category — тип обращения, ровно одно из значений: "вопрос", "заказ", "жалоба", "предложение", "сотрудничество", "другое".
+        - summary — краткое резюме обращения на русском языке, одно предложение (до 200 символов).
+        PROMPT;
+
+    private bool $disabledNoticeLogged = false;
+
+    public function __construct(
+        private readonly HttpClientInterface $httpClient,
+        private readonly LoggerInterface $logger,
+        #[Autowire('%env(AI_BASE_URL)%')]
+        private readonly string $baseUrl,
+        #[Autowire('%env(AI_API_KEY)%')]
+        private readonly string $apiKey,
+        #[Autowire('%env(AI_MODEL)%')]
+        private readonly string $model,
+    ) {
+    }
+
+    /**
+     * Analyzes a contact comment via an OpenAI-compatible Chat Completions API.
+     *
+     * @return array{sentiment: string, category: string, summary: string}|null null on any failure (graceful fallback)
+     */
+    public function analyze(string $comment): ?array
+    {
+        if ('' === $this->apiKey) {
+            // AI is disabled via configuration; log the notice only once per process
+            if (!$this->disabledNoticeLogged) {
+                $this->logger->info('AI analysis is disabled: AI_API_KEY is empty');
+                $this->disabledNoticeLogged = true;
+            }
+
+            return null;
+        }
+
+        try {
+            $response = $this->httpClient->request('POST', rtrim($this->baseUrl, '/') . '/chat/completions', [
+                'headers' => [
+                    'Authorization' => 'Bearer ' . $this->apiKey,
+                ],
+                'json' => [
+                    'model' => $this->model,
+                    'messages' => [
+                        ['role' => 'system', 'content' => self::PROMPT],
+                        ['role' => 'user', 'content' => $comment],
+                    ],
+                    'temperature' => 0,
+                    // supported by OpenAI and most compatible providers; parsing below does not rely on it
+                    'response_format' => ['type' => 'json_object'],
+                ],
+                'timeout' => self::TIMEOUT_SECONDS,
+            ]);
+
+            $statusCode = $response->getStatusCode();
+            $payload = $response->toArray(false);
+        } catch (TransportExceptionInterface|DecodingExceptionInterface $e) {
+            // network error, timeout, unreadable response — never leak the comment itself
+            $this->logger->warning('AI analysis request failed', ['exception' => $e]);
+
+            return null;
+        }
+
+        if ($statusCode >= 400) {
+            $this->logger->warning('AI analysis returned an error status', [
+                'status' => $statusCode,
+                'error' => $payload['error']['message'] ?? null,
+            ]);
+
+            return null;
+        }
+
+        $content = $payload['choices'][0]['message']['content'] ?? null;
+        if (!is_string($content)) {
+            $this->logger->warning('AI analysis returned an unexpected response shape');
+
+            return null;
+        }
+
+        return $this->parseResult($content);
+    }
+
+    /**
+     * @return array{sentiment: string, category: string, summary: string}|null
+     */
+    private function parseResult(string $content): ?array
+    {
+        // models sometimes wrap JSON in ```json fences or add prose around it — extract the object
+        if (!preg_match('/\{.*\}/s', $content, $matches)) {
+            $this->logger->warning('AI analysis returned no JSON object');
+
+            return null;
+        }
+
+        $data = json_decode($matches[0], true);
+        if (!is_array($data)) {
+            $this->logger->warning('AI analysis returned invalid JSON');
+
+            return null;
+        }
+
+        $sentiment = $data['sentiment'] ?? null;
+        $category = $data['category'] ?? null;
+        $summary = $data['summary'] ?? null;
+
+        if (!in_array($sentiment, self::SENTIMENTS, true) || !is_string($category) || '' === $category) {
+            $this->logger->warning('AI analysis returned unusable fields');
+
+            return null;
+        }
+
+        return [
+            'sentiment' => $sentiment,
+            'category' => in_array($category, self::CATEGORIES, true) ? $category : 'другое',
+            'summary' => is_string($summary) && '' !== $summary ? $summary : '',
+        ];
+    }
+}

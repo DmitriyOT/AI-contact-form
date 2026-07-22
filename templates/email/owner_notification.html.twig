@@ -32,12 +32,18 @@
     {% if ai %}
         <h3>AI-анализ</h3>
         <table cellpadding="6" cellspacing="0" border="1" style="border-collapse: collapse; border-color: #ccc;">
-            {% for key, value in ai %}
-                <tr>
-                    <th align="left">{{ key }}</th>
-                    <td>{{ value }}</td>
-                </tr>
-            {% endfor %}
+            <tr>
+                <th align="left">Тональность</th>
+                <td>{{ ai.sentiment }}</td>
+            </tr>
+            <tr>
+                <th align="left">Категория</th>
+                <td>{{ ai.category }}</td>
+            </tr>
+            <tr>
+                <th align="left">Резюме</th>
+                <td>{{ ai.summary }}</td>
+            </tr>
         </table>
     {% endif %}
 </body>
