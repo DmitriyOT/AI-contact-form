@@ -70,7 +70,7 @@ final class ContactController
             throw new ValidationFailedHttpException($details);
         }
 
-        $result = $this->contactService->handle($contactRequest);
+        $result = $this->contactService->handle($contactRequest, $clientIp);
 
         $response = new JsonResponse([
             'status' => 'accepted',

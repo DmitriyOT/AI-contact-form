@@ -79,6 +79,7 @@ final class ApiExceptionSubscriber implements EventSubscriberInterface
             Response::HTTP_UNPROCESSABLE_ENTITY => 'validation_failed',
             Response::HTTP_TOO_MANY_REQUESTS => 'too_many_requests',
             Response::HTTP_BAD_GATEWAY => 'email_failed',
+            Response::HTTP_SERVICE_UNAVAILABLE => 'service_unavailable',
             default => 'http_error',
         };
     }

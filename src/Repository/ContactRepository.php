@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Repository;
 
+use App\Dto\ContactRequest;
 use Doctrine\DBAL\Connection;
-use RuntimeException;
 
 final class ContactRepository
 {
@@ -13,15 +13,56 @@ final class ContactRepository
     {
     }
 
-    public function save(array $contact): int
+    /**
+     * @param array{sentiment?: string, category?: string}|null $aiData AI analysis data (commit 7)
+     *
+     * @return int id of the inserted row
+     */
+    public function save(ContactRequest $contact, ?string $ip, ?array $aiData = null): int
     {
-        // TODO: implement in the persistence commit
-        throw new RuntimeException('Not implemented yet');
+        $this->connection->executeStatement(
+            'INSERT INTO contacts (name, phone, email, comment, ai_sentiment, ai_category, ip_address)
+             VALUES (:name, :phone, :email, :comment, :ai_sentiment, :ai_category, :ip_address)',
+            [
+                'name' => $contact->name,
+                'phone' => $contact->phone,
+                'email' => $contact->email,
+                'comment' => $contact->comment,
+                'ai_sentiment' => $aiData['sentiment'] ?? null,
+                'ai_category' => $aiData['category'] ?? null,
+                'ip_address' => $ip,
+            ]
+        );
+
+        return (int) $this->connection->lastInsertId();
     }
 
     public function countAll(): int
     {
-        // TODO: implement in the persistence commit
-        throw new RuntimeException('Not implemented yet');
+        return (int) $this->connection->fetchOne('SELECT COUNT(*) FROM contacts');
+    }
+
+    public function countToday(): int
+    {
+        return (int) $this->connection->fetchOne(
+            'SELECT COUNT(*) FROM contacts WHERE created_at >= CURDATE()'
+        );
+    }
+
+    /**
+     * @return array<string, int> counters grouped by day ("Y-m-d" => count)
+     */
+    public function countByDay(int $days): array
+    {
+        // $days is an int by type, so inline interpolation here is safe
+        $rows = $this->connection->fetchAllKeyValue(
+            'SELECT DATE(created_at) AS day, COUNT(*) AS cnt
+             FROM contacts
+             WHERE created_at >= CURDATE() - INTERVAL ' . max(0, $days) . ' DAY
+             GROUP BY DATE(created_at)
+             ORDER BY day'
+        );
+
+        return array_map('intval', $rows);
     }
 }
