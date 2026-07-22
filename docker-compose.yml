@@ -6,6 +6,10 @@ services:
     ports:
       # host port 8082 because 8080 is occupied by another local project
       - "8082:8080"
+    environment:
+      # built-in server is single-worker by default and serializes all requests;
+      # 4 workers keep the demo usable under concurrent load (fine for dev/demo)
+      PHP_CLI_SERVER_WORKERS: 4
     volumes:
       - .:/var/www/html
     # .env / .env.local are loaded by Symfony Dotenv from the mounted code

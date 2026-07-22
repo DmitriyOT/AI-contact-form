@@ -279,6 +279,30 @@ docker compose exec app php vendor/bin/phpunit
 - **job `frontend`** — setup-node 20 (кэш npm по `frontend/package-lock.json`) → `npm ci` → `npx tsc --noEmit` → `npm test` → `npm run build`.
 - **job `deploy-template`** — шаблон будущего деплоя: сейчас отключён (`if: false`, шаги — плейсхолдеры, в Actions отображается как skipped, а не ошибка). Инструкция по активации — в комментарии в файле: заменить шаги на реальные (ssh/rsync на VPS, docker registry + pull, либо deploy-hook Render/Railway), секреты — в Settings → Secrets and variables → Actions.
 
+## Нагрузочное тестирование
+
+Скрипты — `loadtest/` (k6 в Docker, ставить ничего не нужно): сценарий `health` (лёгкий GET) и `contact` (полный цикл: валидация → AI → БД → 2×SMTP), каждый VU идёт с уникальным `X-Forwarded-For`, чтобы не упираться в лимит 5/час.
+
+```bash
+bash loadtest/run.sh        # 20 VU × 15 сек на сценарий
+bash loadtest/run.sh 50 30s # свои значения
+```
+
+Результаты (Docker Desktop на Windows, 20 VU) и найденные узкие места:
+
+| Конфигурация | RPS | health p95 | contact p95 |
+|---|---|---|---|
+| Базово: `php -S`, 1 воркер, без opcache | 0.58 | 23.4 с | 39.6 с |
+| + `PHP_CLI_SERVER_WORKERS=4` | 3.46 | 4.1 с | 13.9 с |
+| + opcache (`enable_cli=1`) | 3.80 | 4.6 с (min 1.0 → 0.55 с) | 13.6 с |
+| эксперимент: `validate_timestamps=0` | 4.69 | — | — |
+
+1. **Главный bottleneck — однопоточный `php -S`**: по умолчанию встроенный сервер сериализует все запросы, очередь росла до 40 с. Лечится `PHP_CLI_SERVER_WORKERS` (docker-compose.yml) — прирост ~6×. Rate limiter при нескольких воркерах работает корректно: файловый пул общий (проверено: 5×201 → 429).
+2. **Отсутствие opcache** — каждый запрос заново парсил весь `vendor/`. Добавлен в Dockerfile (`opcache.enable_cli=1`).
+3. **Медленная файловая система bind-mount** (Windows/WSL2): даже с opcache валидация timestamp'ов делает stat() по всем файлам. `validate_timestamps=0` даёт ещё ~25%, но требует перезапуска контейнера после правок кода — сознательно не включено для dev. На Linux-проде проблемы нет.
+4. **Синхронные внешние вызовы в пути запроса** (AI + 2×SMTP + запись в БД): contact p95 ~14 с под 20 VU при мгновенном ai-mock; с реальным AI (1–3 с на вызов) было бы хуже. Правильное решение для прода — Symfony Messenger: принимать обращение, ставить email/AI в очередь, отвечать сразу. Не сделано: задание требует полный синхронный цикл, а очередь — отдельная инфраструктура.
+5. **`php -S` — не prod-сервер**: для прода — php-fpm + nginx или FrankenPHP; встроенный сервер выбран для простоты локального запуска.
+
 ## Деплой (кратко)
 
 - **VPS**: `git clone` → `docker compose up -d --build` → миграции → в `.env.local` боевые `DATABASE_URL`, `MAILER_DSN`, `AI_API_KEY`, `APP_ENV=prod`. Наружу — reverse proxy (nginx/Caddy) с TLS на порт app.
