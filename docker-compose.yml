@@ -29,5 +29,15 @@ services:
       retries: 20
       start_period: 30s
 
+  # frontend: React-лендинг + nginx (раздача статики и прокси /api -> app)
+  web:
+    build:
+      context: ./frontend
+    ports:
+      - "8084:80"
+    depends_on:
+      - app
+    restart: unless-stopped
+
 volumes:
   db_data:

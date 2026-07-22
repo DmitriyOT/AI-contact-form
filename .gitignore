@@ -11,6 +11,8 @@
 
 ###> project-specific ###
 .tools/
+/frontend/node_modules/
+/frontend/dist/
 Вакансия.txt
 Тестовое задание.txt
 ###< project-specific ###
