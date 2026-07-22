@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\EventSubscriber;
 
+use App\Exception\ValidationFailedHttpException;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -36,14 +37,18 @@ final class ApiExceptionSubscriber implements EventSubscriberInterface
         if ($throwable instanceof HttpExceptionInterface) {
             $statusCode = $throwable->getStatusCode();
 
-            $response = new JsonResponse([
-                'error' => [
-                    'code' => $this->codeForStatus($statusCode),
-                    'message' => '' !== $throwable->getMessage()
-                        ? $throwable->getMessage()
-                        : Response::$statusTexts[$statusCode] ?? 'HTTP error',
-                ],
-            ], $statusCode);
+            $error = [
+                'code' => $this->codeForStatus($statusCode),
+                'message' => '' !== $throwable->getMessage()
+                    ? $throwable->getMessage()
+                    : Response::$statusTexts[$statusCode] ?? 'HTTP error',
+            ];
+            if ($throwable instanceof ValidationFailedHttpException) {
+                $error['details'] = $throwable->getDetails();
+            }
+
+            $response = new JsonResponse(['error' => $error], $statusCode);
+            $response->setEncodingOptions(JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             $response->headers->add($throwable->getHeaders());
         } else {
             // never leak internals to the client; full trace goes to the log
@@ -55,6 +60,7 @@ final class ApiExceptionSubscriber implements EventSubscriberInterface
                     'message' => 'Internal server error',
                 ],
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
+            $response->setEncodingOptions(JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         }
 
         $event->setResponse($response);
@@ -69,6 +75,7 @@ final class ApiExceptionSubscriber implements EventSubscriberInterface
             Response::HTTP_NOT_FOUND => 'not_found',
             Response::HTTP_METHOD_NOT_ALLOWED => 'method_not_allowed',
             Response::HTTP_CONFLICT => 'conflict',
+            Response::HTTP_UNSUPPORTED_MEDIA_TYPE => 'unsupported_media_type',
             Response::HTTP_UNPROCESSABLE_ENTITY => 'validation_failed',
             Response::HTTP_TOO_MANY_REQUESTS => 'too_many_requests',
             default => 'http_error',
