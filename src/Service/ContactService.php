@@ -20,7 +20,7 @@ final class ContactService
 
     public function handle(ContactRequest $request): ContactResult
     {
-        // TODO (commit 5): rate limiting check before processing
+        // rate limiting is enforced in ContactController before this service runs
         // TODO (commit 6): persist the request via ContactRepository
         // TODO (commit 7): AI processing of the comment, pass $aiData to sendOwnerNotification()
 

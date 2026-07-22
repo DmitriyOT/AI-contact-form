@@ -1,0 +1,12 @@
+framework:
+    cache:
+        pools:
+            # file-based storage for rate limiter state (var/cache/.../pools)
+            cache.rate_limiter:
+                adapter: cache.adapter.filesystem
+    rate_limiter:
+        contact_form:
+            policy: 'fixed_window'
+            limit: '%env(int:RATE_LIMIT_MAX)%'
+            interval: '%env(RATE_LIMIT_WINDOW)% seconds'
+            storage_service: rate_limiter.storage.contact_form
