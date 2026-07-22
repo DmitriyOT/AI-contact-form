@@ -1,0 +1,276 @@
+openapi: 3.0.3
+info:
+  title: Contact Form API
+  description: |
+    REST API формы обратной связи с AI-анализом обращений (тональность + классификация).
+
+    Все ошибки возвращаются в едином формате `{"error":{"code","message","details?"}}` с `Content-Type: application/json`.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8082
+    description: Локальная разработка (Docker)
+tags:
+  - name: contact
+    description: Приём обращений
+  - name: system
+    description: Служебные эндпоинты
+paths:
+  /api/contact:
+    post:
+      tags: [contact]
+      summary: Отправить обращение
+      description: |
+        Принимает обращение, валидирует, анализирует AI (best-effort), сохраняет в БД
+        и отправляет email-уведомления. Защищено rate limiting'ом по IP
+        (consume до валидации: невалидные запросы тоже тратят лимит).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContactRequest'
+            example:
+              name: Иван Иванов
+              phone: "+7 900 123-45-67"
+              email: ivan@example.com
+              comment: Хочу узнать подробнее о ваших услугах.
+      responses:
+        '201':
+          description: Обращение принято
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContactAccepted'
+              example:
+                status: accepted
+                message: Обращение принято
+                ai: true
+        '400':
+          description: Невалидный JSON
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: bad_request
+                  message: Невалидный JSON
+        '415':
+          description: Content-Type не application/json
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: unsupported_media_type
+                  message: 'Ожидается Content-Type: application/json'
+        '422':
+          description: Ошибка валидации (details сгруппирован по полям)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              example:
+                error:
+                  code: validation_failed
+                  message: Ошибка валидации
+                  details:
+                    email:
+                      - Некорректный email
+                    comment:
+                      - Текст обращения должен содержать минимум 10 символов
+        '429':
+          description: Превышен лимит запросов
+          headers:
+            Retry-After:
+              description: Секунд до конца окна лимита
+              schema:
+                type: integer
+                example: 3582
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: too_many_requests
+                  message: Слишком много запросов, попробуйте позже
+        '502':
+          description: Не удалось отправить email-уведомление владельцу
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: email_failed
+                  message: Не удалось отправить уведомление, попробуйте позже
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: internal_error
+                  message: Internal server error
+  /api/health:
+    get:
+      tags: [system]
+      summary: Проверка состояния сервиса
+      description: Проверяет доступность MySQL через `SELECT 1`.
+      responses:
+        '200':
+          description: Сервис и БД доступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+              example:
+                status: ok
+                db: up
+        '503':
+          description: БД недоступна
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+              example:
+                status: error
+                db: down
+  /api/metrics:
+    get:
+      tags: [system]
+      summary: Статистика обращений
+      description: Живые счётчики из БД (без кэширования).
+      responses:
+        '200':
+          description: Метрики
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Metrics'
+              example:
+                status: ok
+                metrics:
+                  total: 10
+                  today: 10
+                  last_7_days:
+                    2026-07-22: 10
+        '503':
+          description: БД недоступна, метрики не собраны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: service_unavailable
+                  message: Метрики временно недоступны
+components:
+  schemas:
+    ContactRequest:
+      type: object
+      required: [name, phone, email, comment]
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+          example: Иван Иванов
+        phone:
+          type: string
+          pattern: '^\+?[0-9\s\-\(\)]{10,20}$'
+          description: Международный формат, допускаются пробелы, скобки, дефисы
+          example: "+7 900 123-45-67"
+        email:
+          type: string
+          format: email
+          example: ivan@example.com
+        comment:
+          type: string
+          minLength: 10
+          maxLength: 2000
+          example: Хочу узнать подробнее о ваших услугах.
+    ContactAccepted:
+      type: object
+      properties:
+        status:
+          type: string
+          example: accepted
+        message:
+          type: string
+          example: Обращение принято
+        ai:
+          type: boolean
+          description: true — AI-анализ выполнен, false — graceful fallback (AI недоступен/выключен)
+          example: true
+    Health:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, error]
+        db:
+          type: string
+          enum: [up, down]
+    Metrics:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        metrics:
+          type: object
+          properties:
+            total:
+              type: integer
+            today:
+              type: integer
+            last_7_days:
+              type: object
+              additionalProperties:
+                type: integer
+              description: 'Счётчики по дням, ключ — дата Y-m-d'
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              example: not_found
+            message:
+              type: string
+              example: Невалидный JSON
+            details:
+              type: object
+              additionalProperties:
+                type: array
+                items:
+                  type: string
+              description: Присутствует только у validation_failed
+    ValidationError:
+      allOf:
+        - $ref: '#/components/schemas/Error'
+        - type: object
+          properties:
+            error:
+              type: object
+              required: [code, message, details]
+              properties:
+                code:
+                  type: string
+                  enum: [validation_failed]
+                message:
+                  type: string
+                details:
+                  type: object
+                  additionalProperties:
+                    type: array
+                    items:
+                      type: string

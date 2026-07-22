@@ -1,0 +1,114 @@
+{
+  "info": {
+    "name": "Contact Form API",
+    "description": "REST API формы обратной связи с AI-анализом. Локально: http://localhost:8082",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8082"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health check",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/health"
+      }
+    },
+    {
+      "name": "Metrics",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/metrics"
+      }
+    },
+    {
+      "name": "Contact: валидный запрос (201)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Иван Иванов\",\n  \"phone\": \"+7 900 123-45-67\",\n  \"email\": \"ivan@example.com\",\n  \"comment\": \"Хочу узнать подробнее о ваших услугах.\"\n}"
+        },
+        "url": "{{baseUrl}}/api/contact"
+      }
+    },
+    {
+      "name": "Contact: пустое тело (422)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        },
+        "url": "{{baseUrl}}/api/contact"
+      }
+    },
+    {
+      "name": "Contact: невалидные поля (422)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Иван\",\n  \"phone\": \"+79001234567\",\n  \"email\": \"not-an-email\",\n  \"comment\": \"коротко\"\n}"
+        },
+        "url": "{{baseUrl}}/api/contact"
+      }
+    },
+    {
+      "name": "Contact: битый JSON (400)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{invalid"
+        },
+        "url": "{{baseUrl}}/api/contact"
+      }
+    },
+    {
+      "name": "Contact: неверный Content-Type (415)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "text/plain" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "name=Ivan"
+        },
+        "url": "{{baseUrl}}/api/contact"
+      }
+    },
+    {
+      "name": "Contact: rate limit (429 после 5 запросов/час)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Иван Иванов\",\n  \"phone\": \"+79001234567\",\n  \"email\": \"ivan@example.com\",\n  \"comment\": \"Rate limit test message.\"\n}"
+        },
+        "url": "{{baseUrl}}/api/contact",
+        "description": "Отправьте 6 раз подряд: 5 раз 201, 6-й — 429 с заголовком Retry-After. Сброс лимита: docker compose exec app php bin/console cache:pool:clear cache.rate_limiter"
+      }
+    }
+  ]
+}

@@ -16,3 +16,13 @@ services:
     build:
       context: ./docker/ai-mock
     restart: unless-stopped
+
+  # Swagger UI for browsing docs/openapi.yaml (dev convenience)
+  swagger-ui:
+    image: swaggerapi/swagger-ui
+    ports:
+      - "8083:8080"
+    volumes:
+      - ./docs/openapi.yaml:/openapi.yaml:ro
+    environment:
+      SWAGGER_JSON: /openapi.yaml
