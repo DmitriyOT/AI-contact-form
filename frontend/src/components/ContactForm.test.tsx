@@ -137,4 +137,49 @@ describe('ContactForm', () => {
     expect(await screen.findByText('Обращение принято. Спасибо!')).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it('показывает ошибку поля при уходе с пустого поля (blur) и ставит aria-invalid', async () => {
+    const user = userEvent.setup();
+    render(<ContactForm />);
+
+    const nameInput = screen.getByLabelText('Имя');
+    await user.click(nameInput);
+    await user.tab();
+
+    expect(await screen.findByText('Укажите имя')).toBeInTheDocument();
+    expect(nameInput).toHaveAttribute('aria-invalid', 'true');
+    expect(nameInput).toHaveAttribute('aria-describedby', 'error-name');
+
+    await user.type(nameInput, 'Иван');
+    await user.tab();
+
+    expect(screen.queryByText('Укажите имя')).not.toBeInTheDocument();
+    expect(nameInput).toHaveAttribute('aria-invalid', 'false');
+  });
+
+  it('blur по невалидному телефону показывает ошибку формата', async () => {
+    const user = userEvent.setup();
+    render(<ContactForm />);
+
+    await user.type(screen.getByLabelText('Телефон'), '9999999999');
+    await user.tab();
+
+    expect(await screen.findByText('Введите телефон в формате +7 900 123-45-67')).toBeInTheDocument();
+  });
+
+  it('при 502 показывает сообщение об ошибке отправки', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(502, {
+      error: { code: 'email_failed', message: 'Не удалось отправить уведомление, попробуйте позже' },
+    })));
+    render(<ContactForm />);
+
+    await typeValidForm(user);
+    await user.click(screen.getByRole('button', { name: 'Отправить' }));
+
+    expect(await screen.findByText('Не удалось отправить уведомление, попробуйте позже')).toBeInTheDocument();
+    // форма не очищается — пользователь может повторить отправку
+    expect(screen.getByLabelText('Имя')).toHaveValue('Иван Иванов');
+    expect(screen.getByRole('button', { name: 'Отправить' })).toBeEnabled();
+  });
 });
