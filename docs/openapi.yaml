@@ -65,6 +65,16 @@ paths:
                 error:
                   code: unsupported_media_type
                   message: 'Ожидается Content-Type: application/json'
+        '413':
+          description: Тело запроса больше 32 КиБ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: payload_too_large
+                  message: Слишком большое тело запроса
         '422':
           description: Ошибка валидации (details сгруппирован по полям)
           content:
@@ -106,6 +116,16 @@ paths:
                 error:
                   code: email_failed
                   message: Не удалось отправить уведомление, попробуйте позже
+        '503':
+          description: Обращение не сохранено (сбой БД) — письма не отправлялись, безопасно повторить
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: service_unavailable
+                  message: Сервис временно недоступен, попробуйте позже
         '500':
           description: Внутренняя ошибка сервера
           content:
@@ -190,6 +210,22 @@ paths:
                 error:
                   code: forbidden
                   message: 'Метрики отключены: не задан METRICS_TOKEN'
+        '429':
+          description: Превышен лимит запросов (30/мин с IP, защита от перебора токена)
+          headers:
+            Retry-After:
+              description: Секунд до конца окна лимита
+              schema:
+                type: integer
+                example: 42
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: too_many_requests
+                  message: Слишком много запросов, попробуйте позже
         '503':
           description: БД недоступна, метрики не собраны
           content:
@@ -218,12 +254,12 @@ components:
           example: Иван Иванов
         phone:
           type: string
-          pattern: '^(\+7|8)[\s\-\(]*\d{3}[\s\-\)]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}$'
-          description: 'Российский формат: +7 или 8, далее 10 цифр; допускаются пробелы, скобки, дефисы'
+          description: 'Российский формат: +7 или 8, далее 10 цифр; допускаются пробелы, скобки, дефисы. Перед валидацией нормализуется к виду +7XXXXXXXXXX (разделители убираются, 8 → +7)'
           example: "+7 900 123-45-67"
         email:
           type: string
           format: email
+          maxLength: 255
           example: ivan@example.com
         comment:
           type: string
