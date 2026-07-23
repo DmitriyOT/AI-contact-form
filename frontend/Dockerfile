@@ -1,11 +1,12 @@
-# Stage 1: build (and run the test suite — a failing test fails the image build)
-FROM node:20-alpine AS build
+# Stage 1: build (lint + test suite — a failing check fails the image build)
+FROM node:24-alpine AS build
 WORKDIR /app
 
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 
 COPY . .
+RUN npm run lint
 RUN npm run test
 RUN npm run build
 
