@@ -24,21 +24,29 @@ foreach (array_reverse($payload['messages'] ?? []) as $message) {
 $sentiment = 'neutral';
 $category = 'вопрос';
 $summary = 'Клиент задал вопрос.';
+$priority = 'средний';
+$draftReply = 'Здравствуйте! Спасибо за ваш вопрос. Мы получили обращение и ответим вам в ближайшее время.';
 
 if (preg_match('/(плохо|ужас|жалоба|не работает|отвратительно)/u', $requestText)) {
     $sentiment = 'negative';
     $category = 'жалоба';
     $summary = 'Клиент недоволен и сообщает о проблеме.';
+    $priority = 'высокий';
+    $draftReply = 'Здравствуйте! Приносим извинения за возникшие неудобства. Мы уже разбираемся с проблемой и свяжемся с вами в ближайшее время.';
 } elseif (preg_match('/(спасибо|отлично|супер|понравилось|благодар)/u', $requestText)) {
     $sentiment = 'positive';
     $category = 'другое';
     $summary = 'Клиент благодарит за сервис.';
+    $priority = 'низкий';
+    $draftReply = 'Здравствуйте! Спасибо за тёплые слова, нам очень приятно. Будем рады видеть вас снова!';
 }
 
 $content = json_encode([
     'sentiment' => $sentiment,
     'category' => $category,
     'summary' => $summary,
+    'priority' => $priority,
+    'draft_reply' => $draftReply,
 ], JSON_UNESCAPED_UNICODE);
 
 header('Content-Type: application/json; charset=utf-8');

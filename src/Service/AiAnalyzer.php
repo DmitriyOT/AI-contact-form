@@ -14,16 +14,20 @@ final class AiAnalyzer
 {
     private const SENTIMENTS = ['positive', 'neutral', 'negative'];
     private const CATEGORIES = ['вопрос', 'заказ', 'жалоба', 'предложение', 'сотрудничество', 'другое'];
+    private const PRIORITIES = ['низкий', 'средний', 'высокий', 'срочный'];
+    private const DEFAULT_PRIORITY = 'средний';
     private const TIMEOUT_SECONDS = 10;
 
     private const PROMPT = <<<'PROMPT'
         Ты — помощник службы поддержки. Проанализируй обращение клиента и ответь СТРОГО одним JSON-объектом без пояснений и markdown-обёрток:
-        {"sentiment":"...","category":"...","summary":"..."}
+        {"sentiment":"...","category":"...","summary":"...","priority":"...","draft_reply":"..."}
 
         Правила:
         - sentiment — тональность обращения, ровно одно из значений: "positive", "neutral", "negative".
         - category — тип обращения, ровно одно из значений: "вопрос", "заказ", "жалоба", "предложение", "сотрудничество", "другое".
         - summary — краткое резюме обращения на русском языке, одно предложение (до 200 символов).
+        - priority — приоритет обработки, ровно одно из значений: "низкий", "средний", "высокий", "срочный". Жалобы и проблемы, блокирующие клиента, — "высокий" или "срочный"; благодарности и общие вопросы — "низкий" или "средний".
+        - draft_reply — черновик ответа клиенту на русском языке (1–3 предложения, до 500 символов): вежливо, по существу обращения, без выдумывания фактов о компании и обещаний.
         PROMPT;
 
     private bool $disabledNoticeLogged = false;
@@ -43,7 +47,7 @@ final class AiAnalyzer
     /**
      * Analyzes a contact comment via an OpenAI-compatible Chat Completions API.
      *
-     * @return array{sentiment: string, category: string, summary: string}|null null on any failure (graceful fallback)
+     * @return array{sentiment: string, category: string, summary: string, priority: string, draft_reply: string}|null null on any failure (graceful fallback)
      */
     public function analyze(string $comment): ?array
     {
@@ -104,7 +108,7 @@ final class AiAnalyzer
     }
 
     /**
-     * @return array{sentiment: string, category: string, summary: string}|null
+     * @return array{sentiment: string, category: string, summary: string, priority: string, draft_reply: string}|null
      */
     private function parseResult(string $content): ?array
     {
@@ -125,6 +129,8 @@ final class AiAnalyzer
         $sentiment = $data['sentiment'] ?? null;
         $category = $data['category'] ?? null;
         $summary = $data['summary'] ?? null;
+        $priority = $data['priority'] ?? null;
+        $draftReply = $data['draft_reply'] ?? null;
 
         if (!in_array($sentiment, self::SENTIMENTS, true) || !is_string($category) || '' === $category) {
             $this->logger->warning('AI analysis returned unusable fields');
@@ -137,6 +143,10 @@ final class AiAnalyzer
             'category' => in_array($category, self::CATEGORIES, true) ? $category : 'другое',
             // models sometimes exceed the 200-char prompt limit; the DB column is VARCHAR(255)
             'summary' => is_string($summary) && '' !== $summary ? mb_substr($summary, 0, 200) : '',
+            // unknown priority degrades to a safe default instead of failing the whole analysis
+            'priority' => is_string($priority) && in_array($priority, self::PRIORITIES, true) ? $priority : self::DEFAULT_PRIORITY,
+            // optional by design: an empty draft is better than failing the request
+            'draft_reply' => is_string($draftReply) && '' !== trim($draftReply) ? mb_substr(trim($draftReply), 0, 500) : '',
         ];
     }
 }

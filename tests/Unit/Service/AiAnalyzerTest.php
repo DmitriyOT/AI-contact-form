@@ -30,12 +30,51 @@ final class AiAnalyzerTest extends TestCase
 
     public function testParsesValidResponse(): void
     {
-        $analyzer = $this->analyzerWithContent('{"sentiment":"positive","category":"вопрос","summary":"Клиент спрашивает об услугах"}');
+        $analyzer = $this->analyzerWithContent('{"sentiment":"positive","category":"вопрос","summary":"Клиент спрашивает об услугах","priority":"низкий","draft_reply":"Здравствуйте! Ответим в ближайшее время."}');
 
         self::assertSame(
-            ['sentiment' => 'positive', 'category' => 'вопрос', 'summary' => 'Клиент спрашивает об услугах'],
+            [
+                'sentiment' => 'positive',
+                'category' => 'вопрос',
+                'summary' => 'Клиент спрашивает об услугах',
+                'priority' => 'низкий',
+                'draft_reply' => 'Здравствуйте! Ответим в ближайшее время.',
+            ],
             $analyzer->analyze('Расскажите о ваших услугах, пожалуйста')
         );
+    }
+
+    public function testMissingNewFieldsFallBackToDefaults(): void
+    {
+        // ответ старого формата (без priority/draft_reply) — обратная совместимость
+        $analyzer = $this->analyzerWithContent('{"sentiment":"neutral","category":"вопрос","summary":"s"}');
+
+        $result = $analyzer->analyze('текст');
+
+        self::assertSame('средний', $result['priority']);
+        self::assertSame('', $result['draft_reply']);
+    }
+
+    public function testUnknownPriorityFallsBackToDefault(): void
+    {
+        $analyzer = $this->analyzerWithContent('{"sentiment":"negative","category":"жалоба","summary":"s","priority":"космический","draft_reply":"d"}');
+
+        self::assertSame('средний', $analyzer->analyze('текст')['priority']);
+    }
+
+    public function testDraftReplyIsTruncatedTo500Chars(): void
+    {
+        $analyzer = $this->analyzerWithContent(json_encode([
+            'sentiment' => 'neutral',
+            'category' => 'вопрос',
+            'summary' => 's',
+            'priority' => 'высокий',
+            'draft_reply' => str_repeat('б', 600),
+        ], JSON_UNESCAPED_UNICODE));
+
+        $result = $analyzer->analyze('текст');
+
+        self::assertSame(500, mb_strlen($result['draft_reply']));
     }
 
     public function testParsesJsonWrappedInMarkdownFences(): void

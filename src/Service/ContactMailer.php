@@ -27,10 +27,16 @@ final class ContactMailer
      */
     public function sendOwnerNotification(ContactRequest $contact, ?array $aiData = null): void
     {
+        // high-priority requests are flagged right in the subject line
+        $priority = $aiData['priority'] ?? null;
+        $subject = in_array($priority, ['высокий', 'срочный'], true)
+            ? sprintf('[%s] Новое обращение с сайта', mb_strtoupper((string) $priority))
+            : 'Новое обращение с сайта';
+
         $email = (new TemplatedEmail())
             ->from(new Address($this->fromEmail))
             ->to(new Address($this->ownerEmail))
-            ->subject('Новое обращение с сайта')
+            ->subject($subject)
             ->htmlTemplate('email/owner_notification.html.twig')
             ->context([
                 'contact' => $contact,

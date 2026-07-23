@@ -42,6 +42,8 @@ final class ContactApiTest extends WebTestCase
         self::assertNull($row['ai_sentiment']);
         self::assertNull($row['ai_category']);
         self::assertNull($row['ai_summary']);
+        self::assertNull($row['ai_priority']);
+        self::assertNull($row['ai_draft_reply']);
         self::assertSame('127.0.0.1', $row['ip_address']);
     }
 

@@ -107,8 +107,8 @@ src/
 │   └── ContactRepository.php      # DBAL: save/countAll/countToday/countByDay
 └── Service/
     ├── ContactService.php         # Оркестрация: AI → save → email владельцу → копия пользователю
-    ├── ContactMailer.php          # Письма через TemplatedEmail
-    └── AiAnalyzer.php             # AI-анализ (тональность + категория), graceful fallback
+    ├── ContactMailer.php          # Письма через TemplatedEmail, флаг приоритета в теме
+    └── AiAnalyzer.php             # AI: тональность, категория, резюме, приоритет, черновик; graceful fallback
 
 tests/
 ├── Unit/                        # PHPUnit без ядра: DTO/валидация, AiAnalyzer (MockHttpClient),
@@ -183,21 +183,23 @@ GET /api/metrics -H 'Authorization: Bearer dev-metrics-token'
 
 ## 5. AI-интеграция
 
-Две функции одним запросом к OpenAI-совместимому Chat Completions API: **тональность** (`positive|neutral|negative`) и **классификация типа обращения** (`вопрос|заказ|жалоба|предложение|сотрудничество|другое`) + краткое резюме. Результат сохраняется в БД (`ai_sentiment`, `ai_category`, `ai_summary`) и включается в письмо владельцу (блок «AI-анализ»).
+Пять функций одним запросом к OpenAI-совместимому Chat Completions API: **тональность** (`positive|neutral|negative`), **классификация типа обращения** (`вопрос|заказ|жалоба|предложение|сотрудничество|другое`), **краткое резюме**, **приоритизация** (`низкий|средний|высокий|срочный`) и **черновик ответа клиенту** (1–3 предложения). Результат сохраняется в БД (`ai_sentiment`, `ai_category`, `ai_summary`, `ai_priority`, `ai_draft_reply`) и включается в письмо владельцу: блок «AI-анализ» с приоритетом и черновиком ответа; при приоритете «высокий»/«срочный» тема письма помечается `[ВЫСОКИЙ]`/`[СРОЧНЫЙ]`. Черновик — именно черновик для владельца, пользователю автоматически ничего не отправляется.
 
 Промпт (system message, полный текст):
 
 ```
 Ты — помощник службы поддержки. Проанализируй обращение клиента и ответь СТРОГО одним JSON-объектом без пояснений и markdown-обёрток:
-{"sentiment":"...","category":"...","summary":"..."}
+{"sentiment":"...","category":"...","summary":"...","priority":"...","draft_reply":"..."}
 
 Правила:
 - sentiment — тональность обращения, ровно одно из значений: "positive", "neutral", "negative".
 - category — тип обращения, ровно одно из значений: "вопрос", "заказ", "жалоба", "предложение", "сотрудничество", "другое".
 - summary — краткое резюме обращения на русском языке, одно предложение (до 200 символов).
+- priority — приоритет обработки, ровно одно из значений: "низкий", "средний", "высокий", "срочный". Жалобы и проблемы, блокирующие клиента, — "высокий" или "срочный"; благодарности и общие вопросы — "низкий" или "средний".
+- draft_reply — черновик ответа клиенту на русском языке (1–3 предложения, до 500 символов): вежливо, по существу обращения, без выдумывания фактов о компании и обещаний.
 ```
 
-Комментарий передаётся отдельным user-сообщением. Таймаут 10 с, `response_format: json_object` (парсинг на него не полагается: JSON извлекается regex'ом, переживает ```json-обёртки; sentiment проверяется по whitelist, категория вне списка → `другое`).
+Комментарий передаётся отдельным user-сообщением. Таймаут 10 с, `response_format: json_object` (парсинг на него не полагается: JSON извлекается regex'ом, переживает ```json-обёртки; sentiment проверяется по whitelist, категория вне списка → `другое`, неизвестный приоритет → `средний`, summary обрезается до 200, черновик — до 500 символов).
 
 **Graceful fallback** — AI никогда не роняет запрос:
 
@@ -233,6 +235,8 @@ GET /api/metrics -H 'Authorization: Bearer dev-metrics-token'
 | ai_sentiment | VARCHAR(20) NULL | positive/neutral/negative |
 | ai_category | VARCHAR(50) NULL | тип обращения |
 | ai_summary | VARCHAR(255) NULL | резюме от AI (обрезается до 200 символов) |
+| ai_priority | VARCHAR(20) NULL | низкий/средний/высокий/срочный |
+| ai_draft_reply | TEXT NULL | черновик ответа клиенту (до 500 символов) |
 | ip_address | VARCHAR(45) NULL | IPv4/IPv6 |
 | created_at | DATETIME DEFAULT CURRENT_TIMESTAMP | индекс |
 
@@ -256,7 +260,7 @@ docker run --rm -v "$(pwd)/frontend:/app" -w /app node:20-alpine npm test   # п
 
 ## Тесты бэкенда
 
-PHPUnit (49 тестов: unit + functional), конфиг — `phpunit.xml.dist`. Unit-тесты не требуют окружения; функциональные (`WebTestCase`) работают против отдельной БД `contact_form_test` в docker-сети (суффикс `_test` добавляет doctrine-bundle в `APP_ENV=test`; подключение под root, т.к. у пользователя `app` гранты только на `contact_form.*`).
+PHPUnit (55 тестов: unit + functional), конфиг — `phpunit.xml.dist`. Unit-тесты не требуют окружения; функциональные (`WebTestCase`) работают против отдельной БД `contact_form_test` в docker-сети (суффикс `_test` добавляет doctrine-bundle в `APP_ENV=test`; подключение под root, т.к. у пользователя `app` гранты только на `contact_form.*`).
 
 ```bash
 # одноразовая подготовка тестовой БД
@@ -269,7 +273,7 @@ docker compose exec -e APP_ENV=test \
 docker compose exec app php vendor/bin/phpunit
 ```
 
-Покрытие: валидация и санитизация DTO (границы длин, форматы телефонов, нестроковые типы), `AiAnalyzer` (валидный ответ, markdown-обёртки, мусорный JSON, 5xx, таймаут, обрезка summary, пустой ключ), `ContactService` (деградация БД/почты, 502 при сбое письма владельцу), авторизация `/api/metrics`, HTTP-контракт `/api/contact` (201/400/405/415/422), `/api/health`.
+Покрытие: валидация и санитизация DTO (границы длин, форматы телефонов, нестроковые типы), `AiAnalyzer` (валидный ответ, markdown-обёртки, мусорный JSON, 5xx, таймаут, обрезка summary/черновика, дефолтный приоритет, пустой ключ), `ContactService` (деградация БД/почты, 502 при сбое письма владельцу), `ContactMailer` (флаг приоритета в теме), авторизация `/api/metrics`, HTTP-контракт `/api/contact` (201/400/405/415/422), `/api/health`.
 
 ## CI/CD
 
