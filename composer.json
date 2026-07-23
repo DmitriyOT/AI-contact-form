@@ -7,9 +7,9 @@
         "php": ">=8.2",
         "ext-ctype": "*",
         "ext-iconv": "*",
+        "ext-mbstring": "*",
         "doctrine/doctrine-bundle": ">=2.18.3",
         "doctrine/doctrine-migrations-bundle": "^3.7",
-        "doctrine/orm": "^3.6",
         "nelmio/cors-bundle": "^2.6",
         "symfony/console": "7.4.*",
         "symfony/dotenv": "7.4.*",
@@ -17,7 +17,7 @@
         "symfony/framework-bundle": "7.4.*",
         "symfony/http-client": "7.4.*",
         "symfony/mailer": "7.4.*",
-        "symfony/monolog-bundle": "*",
+        "symfony/monolog-bundle": "^4.0",
         "symfony/rate-limiter": "7.4.*",
         "symfony/runtime": "7.4.*",
         "symfony/twig-bundle": "7.4.*",
@@ -78,6 +78,7 @@
         }
     },
     "require-dev": {
+        "phpstan/phpstan": "^2.2",
         "phpunit/phpunit": "^11",
         "symfony/browser-kit": "7.4.*"
     }

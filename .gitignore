@@ -16,3 +16,8 @@
 Вакансия.txt
 Тестовое задание.txt
 ###< project-specific ###
+
+###> phpunit/phpunit ###
+/phpunit.xml
+/.phpunit.cache/
+###< phpunit/phpunit ###

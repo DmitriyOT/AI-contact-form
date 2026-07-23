@@ -51,21 +51,26 @@ jobs:
           docker compose logs app db
           exit 1
 
-      - name: Static checks (composer validate, lint:container)
+      - name: Static checks (composer validate, lint:container, PHPStan)
         run: |
           docker compose exec -T app composer validate --no-check-publish
           docker compose exec -T app php bin/console lint:container
+          docker compose exec -T app php vendor/bin/phpstan analyse --no-progress --memory-limit=512M
+
+      - name: Security audit (composer audit)
+        run: docker compose exec -T app composer audit --no-interaction
 
       - name: Run migrations
         run: docker compose exec -T app php bin/console doctrine:migrations:migrate --no-interaction
 
       # PHPUnit: unit + functional. Тесты работают с отдельной БД contact_form_test
       # (суффикс _test добавляет doctrine-bundle в APP_ENV=test; root, т.к. у app гранты только на contact_form.*)
+      # Root-пароль не зашит в репозитории: берётся из DB_ROOT_PASSWORD (см. docker-compose.yml).
       - name: Backend tests (PHPUnit)
         run: |
-          docker compose exec -T db mysql -uroot -prootsecret -e "CREATE DATABASE IF NOT EXISTS contact_form_test;"
+          docker compose exec -T db mysql -uroot -p"${DB_ROOT_PASSWORD:-rootsecret}" -e "CREATE DATABASE IF NOT EXISTS contact_form_test;"
           docker compose exec -T -e APP_ENV=test \
-            -e "DATABASE_URL=mysql://root:rootsecret@db:3306/contact_form?serverVersion=8.0&charset=utf8mb4" \
+            -e "DATABASE_URL=mysql://root:${DB_ROOT_PASSWORD:-rootsecret}@db:3306/contact_form?serverVersion=8.0&charset=utf8mb4" \
             app php bin/console doctrine:migrations:migrate --no-interaction
           docker compose exec -T app php vendor/bin/phpunit
 
