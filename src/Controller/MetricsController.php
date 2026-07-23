@@ -11,7 +11,9 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\ServiceUnavailableHttpException;
+use Symfony\Component\HttpKernel\Exception\TooManyRequestsHttpException;
 use Symfony\Component\HttpKernel\Exception\UnauthorizedHttpException;
+use Symfony\Component\RateLimiter\RateLimiterFactory;
 use Symfony\Component\Routing\Attribute\Route;
 use Throwable;
 
@@ -19,6 +21,7 @@ final class MetricsController
 {
     public function __construct(
         private readonly ContactRepository $contactRepository,
+        private readonly RateLimiterFactory $metricsApiLimiter,
         private readonly LoggerInterface $logger,
         #[Autowire('%env(METRICS_TOKEN)%')]
         private readonly string $metricsToken,
@@ -28,6 +31,15 @@ final class MetricsController
     #[Route('/api/metrics', name: 'api_metrics', methods: ['GET'])]
     public function index(Request $request): JsonResponse
     {
+        // throttle Bearer-token brute force: the limit is consumed before any auth check
+        $limit = $this->metricsApiLimiter->create((string) $request->getClientIp())->consume();
+        if (!$limit->isAccepted()) {
+            throw new TooManyRequestsHttpException(
+                max(1, $limit->getRetryAfter()->getTimestamp() - time()),
+                'Слишком много запросов, попробуйте позже'
+            );
+        }
+
         // an empty token means the endpoint is disabled entirely (safe default)
         if ('' === $this->metricsToken) {
             throw new AccessDeniedHttpException('Метрики отключены: не задан METRICS_TOKEN');

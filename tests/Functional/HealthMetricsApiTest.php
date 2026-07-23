@@ -16,6 +16,8 @@ final class HealthMetricsApiTest extends WebTestCase
     {
         $this->client = static::createClient();
         static::getContainer()->get(Connection::class)->executeStatement('DELETE FROM contacts');
+        // the file-backed limiter pool persists across tests — start from a clean window
+        static::getContainer()->get('cache.rate_limiter')->clear();
     }
 
     public function testHealthReportsDatabaseUp(): void

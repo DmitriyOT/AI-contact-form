@@ -9,6 +9,7 @@ use App\Dto\ContactResult;
 use App\Exception\EmailSendingException;
 use App\Repository\ContactRepository;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\HttpKernel\Exception\ServiceUnavailableHttpException;
 use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
 use Throwable;
 
@@ -33,9 +34,12 @@ final class ContactService
             $contactId = $this->contactRepository->save($request, $ip, $aiData);
             $this->logger->info('Contact request persisted', ['id' => $contactId]);
         } catch (Throwable $e) {
-            // persistence failure must not break the user flow: the email still goes out
+            // 201 must mean "the record exists": silently accepting a request that was
+            // never persisted would corrupt the metrics and lose the contact without a trace.
+            // Failing before any email goes out also keeps retries free of duplicates.
             $this->logger->error('Failed to persist contact request', ['exception' => $e]);
-            $contactId = null;
+
+            throw new ServiceUnavailableHttpException(null, 'Сервис временно недоступен, попробуйте позже', $e);
         }
 
         try {

@@ -12,6 +12,7 @@ use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\HttpKernel\Exception\TooManyRequestsHttpException;
 use Symfony\Component\HttpKernel\Exception\UnsupportedMediaTypeHttpException;
 use Symfony\Component\RateLimiter\RateLimiterFactory;
@@ -20,6 +21,10 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 final class ContactController
 {
+    // the comment field is capped at 2000 chars, so 32 KiB covers any legitimate payload
+    // with a wide margin — anything bigger is junk that must not reach json_decode
+    private const MAX_BODY_BYTES = 32768;
+
     public function __construct(
         private readonly ContactService $contactService,
         private readonly RateLimiterFactory $contactFormLimiter,
@@ -48,8 +53,20 @@ final class ContactController
             throw new UnsupportedMediaTypeHttpException('Ожидается Content-Type: application/json');
         }
 
+        // cheap DoS guard: reject oversized bodies before json_decode eats the memory
+        $contentLength = $request->headers->get('Content-Length');
+        if (null !== $contentLength && (int) $contentLength > self::MAX_BODY_BYTES) {
+            throw new HttpException(413, 'Слишком большое тело запроса');
+        }
+
+        $content = $request->getContent();
+        if (strlen($content) > self::MAX_BODY_BYTES) {
+            // no Content-Length (e.g. chunked encoding) — check the actual size
+            throw new HttpException(413, 'Слишком большое тело запроса');
+        }
+
         try {
-            $data = json_decode($request->getContent(), true, 512, JSON_THROW_ON_ERROR);
+            $data = json_decode($content, true, 512, JSON_THROW_ON_ERROR);
         } catch (JsonException) {
             throw new BadRequestHttpException('Невалидный JSON');
         }

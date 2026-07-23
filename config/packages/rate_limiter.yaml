@@ -10,3 +10,9 @@ framework:
             limit: '%env(int:RATE_LIMIT_MAX)%'
             interval: '%env(RATE_LIMIT_WINDOW)% seconds'
             storage_service: rate_limiter.storage.contact_form
+        # throttles Bearer-token brute force on /api/metrics
+        metrics_api:
+            policy: 'fixed_window'
+            limit: 30
+            interval: '60 seconds'
+            storage_service: rate_limiter.storage.metrics_api

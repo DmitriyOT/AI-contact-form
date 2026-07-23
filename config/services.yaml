@@ -26,3 +26,8 @@ services:
     rate_limiter.storage.contact_form:
         class: Symfony\Component\RateLimiter\Storage\CacheStorage
         arguments: ['@cache.rate_limiter']
+
+    # file-based storage for the metrics_api rate limiter (same pool, separate keys)
+    rate_limiter.storage.metrics_api:
+        class: Symfony\Component\RateLimiter\Storage\CacheStorage
+        arguments: ['@cache.rate_limiter']

@@ -17,6 +17,9 @@ final class AiAnalyzer
     private const PRIORITIES = ['низкий', 'средний', 'высокий', 'срочный'];
     private const DEFAULT_PRIORITY = 'средний';
     private const TIMEOUT_SECONDS = 10;
+    // total wall-clock budget: a slow-trickling response must not hold the worker
+    // far beyond the idle timeout above
+    private const MAX_DURATION_SECONDS = 15;
 
     private const PROMPT = <<<'PROMPT'
         Ты — помощник службы поддержки. Проанализируй обращение клиента и ответь СТРОГО одним JSON-объектом без пояснений и markdown-обёрток:
@@ -77,6 +80,7 @@ final class AiAnalyzer
                     'response_format' => ['type' => 'json_object'],
                 ],
                 'timeout' => self::TIMEOUT_SECONDS,
+                'max_duration' => self::MAX_DURATION_SECONDS,
             ]);
 
             $statusCode = $response->getStatusCode();
@@ -108,21 +112,42 @@ final class AiAnalyzer
     }
 
     /**
+     * Finds the first decodable JSON object in the model output.
+     * Tries the whole content, then the widest {…} span, then flat {…} candidates:
+     * the widest span alone breaks when the model appends prose with braces after the JSON.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function extractJson(string $content): ?array
+    {
+        $candidates = [trim($content)];
+        if (preg_match('/\{.*\}/s', $content, $match)) {
+            $candidates[] = $match[0];
+        }
+        if (preg_match_all('/\{[^{}]*\}/', $content, $matches)) {
+            array_push($candidates, ...$matches[0]);
+        }
+
+        foreach ($candidates as $candidate) {
+            $data = json_decode($candidate, true);
+            if (is_array($data)) {
+                return $data;
+            }
+        }
+
+        $this->logger->warning('AI analysis returned no JSON object');
+
+        return null;
+    }
+
+    /**
      * @return array{sentiment: string, category: string, summary: string, priority: string, draft_reply: string}|null
      */
     private function parseResult(string $content): ?array
     {
         // models sometimes wrap JSON in ```json fences or add prose around it — extract the object
-        if (!preg_match('/\{.*\}/s', $content, $matches)) {
-            $this->logger->warning('AI analysis returned no JSON object');
-
-            return null;
-        }
-
-        $data = json_decode($matches[0], true);
-        if (!is_array($data)) {
-            $this->logger->warning('AI analysis returned invalid JSON');
-
+        $data = $this->extractJson($content);
+        if (null === $data) {
             return null;
         }
 

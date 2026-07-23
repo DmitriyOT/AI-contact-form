@@ -18,10 +18,12 @@ final class ContactRequest
     )]
     public mixed $name = null;
 
+    // fromArray() normalizes the phone to the canonical +7XXXXXXXXXX form before validation,
+    // so this regex checks the canonical form and the value can never exceed the VARCHAR(20) column
     #[Assert\NotBlank(message: 'Укажите телефон')]
     #[Assert\Type(type: 'string', message: 'Телефон должен быть строкой')]
     #[Assert\Regex(
-        pattern: '/^(\+7|8)[\s\-\(]*\d{3}[\s\-\)]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}$/',
+        pattern: '/^\+7\d{10}$/',
         message: 'Введите телефон в формате +7 900 123-45-67'
     )]
     public mixed $phone = null;
@@ -29,6 +31,7 @@ final class ContactRequest
     #[Assert\NotBlank(message: 'Укажите email')]
     #[Assert\Type(type: 'string', message: 'Email должен быть строкой')]
     #[Assert\Email(message: 'Некорректный email', mode: Assert\Email::VALIDATION_MODE_STRICT)]
+    #[Assert\Length(max: 255, maxMessage: 'Email должен содержать максимум {{ limit }} символов')]
     public mixed $email = null;
 
     #[Assert\NotBlank(message: 'Укажите текст обращения')]
@@ -50,7 +53,7 @@ final class ContactRequest
         $dto = new self();
 
         $dto->name = self::sanitizePlainText($data['name'] ?? null);
-        $dto->phone = self::sanitizePlainText($data['phone'] ?? null);
+        $dto->phone = self::normalizePhone($data['phone'] ?? null);
         $dto->email = self::sanitizePlainText($data['email'] ?? null);
         // comment keeps its HTML; it will be escaped on output/sending
         $dto->comment = isset($data['comment']) && is_string($data['comment'])
@@ -58,6 +61,25 @@ final class ContactRequest
             : ($data['comment'] ?? null);
 
         return $dto;
+    }
+
+    /**
+     * Brings the phone to the canonical +7XXXXXXXXXX form: strips formatting
+     * separators and converts a leading 8 to +7. Non-string values pass through
+     * untouched so Assert\Type reports a 422 instead of a 500.
+     */
+    private static function normalizePhone(mixed $value): mixed
+    {
+        if (!is_string($value)) {
+            return $value;
+        }
+
+        $phone = (string) preg_replace('/[\s()\-]+/', '', trim(strip_tags($value)));
+        if (str_starts_with($phone, '8') && 11 === strlen($phone)) {
+            $phone = '+7' . substr($phone, 1);
+        }
+
+        return $phone;
     }
 
     private static function sanitizePlainText(mixed $value): mixed

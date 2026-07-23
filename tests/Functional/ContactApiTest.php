@@ -18,6 +18,8 @@ final class ContactApiTest extends WebTestCase
         $this->client = static::createClient();
         $this->connection = static::getContainer()->get(Connection::class);
         $this->connection->executeStatement('DELETE FROM contacts');
+        // the file-backed limiter pool persists across tests — start from a clean window
+        static::getContainer()->get('cache.rate_limiter')->clear();
     }
 
     public function testValidContactReturns201(): void
@@ -97,6 +99,65 @@ final class ContactApiTest extends WebTestCase
         self::assertArrayHasKey('name', $this->responseJson()['error']['details']);
     }
 
+    public function testOverlongPhoneAndEmailReturn422(): void
+    {
+        $this->postContact([
+            'name' => 'Иван',
+            // normalization strips the separators, leaving 13 digits — too long for a valid number
+            'phone' => '+7' . str_repeat(' ', 30) . '900 123-45-67 89',
+            // syntactically valid email longer than the VARCHAR(255) column
+            'email' => str_repeat('a', 250) . '@example.com',
+            'comment' => 'Комментарий достаточной длины.',
+        ]);
+
+        self::assertResponseStatusCodeSame(422);
+        $details = $this->responseJson()['error']['details'];
+        self::assertArrayHasKey('phone', $details);
+        self::assertArrayHasKey('email', $details);
+        // nothing must reach the database
+        self::assertSame(0, (int) $this->connection->fetchOne('SELECT COUNT(*) FROM contacts'));
+    }
+
+    public function testOversizedBodyReturns413(): void
+    {
+        $payload = json_encode([
+            'name' => 'Иван',
+            'phone' => '+79001234567',
+            'email' => 'ivan@example.com',
+            'comment' => 'Комментарий достаточной длины. ' . str_repeat('а', 40000),
+        ], JSON_UNESCAPED_UNICODE);
+
+        $this->client->request('POST', '/api/contact', [], [], ['CONTENT_TYPE' => 'application/json'], $payload);
+
+        self::assertResponseStatusCodeSame(413);
+        self::assertSame('payload_too_large', $this->responseJson()['error']['code']);
+    }
+
+    public function testMailerFailureReturns502(): void
+    {
+        // point the mailer at a dead SMTP port; %env(MAILER_DSN)% is resolved lazily,
+        // so overriding it before booting the kernel redirects the transport for this test only
+        $this->overrideEnv('MAILER_DSN', 'smtp://127.0.0.1:9');
+        // setUp() already booted a kernel — shut it down so the new one picks up the override
+        self::ensureKernelShutdown();
+
+        try {
+            $client = static::createClient();
+            $client->request('POST', '/api/contact', [], [], ['CONTENT_TYPE' => 'application/json'], json_encode([
+                'name' => 'Иван Иванов',
+                'phone' => '+7 900 123-45-67',
+                'email' => 'ivan@example.com',
+                'comment' => 'Хочу узнать подробнее о ваших услугах.',
+            ], JSON_UNESCAPED_UNICODE));
+
+            self::assertResponseStatusCodeSame(502);
+            $data = json_decode((string) $client->getResponse()->getContent(), true);
+            self::assertSame('email_failed', $data['error']['code']);
+        } finally {
+            $this->overrideEnv('MAILER_DSN', 'null://null');
+        }
+    }
+
     public function testBrokenJsonReturns400(): void
     {
         $this->client->request('POST', '/api/contact', [], [], ['CONTENT_TYPE' => 'application/json'], '{broken');
@@ -140,6 +201,12 @@ final class ContactApiTest extends WebTestCase
             ['CONTENT_TYPE' => 'application/json'],
             json_encode($payload, JSON_UNESCAPED_UNICODE)
         );
+    }
+
+    private function overrideEnv(string $name, string $value): void
+    {
+        $_ENV[$name] = $_SERVER[$name] = $value;
+        putenv($name . '=' . $value);
     }
 
     /**

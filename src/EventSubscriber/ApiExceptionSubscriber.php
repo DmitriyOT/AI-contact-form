@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\EventSubscriber;
 
+use App\Exception\EmailSendingException;
 use App\Exception\ValidationFailedHttpException;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
@@ -38,7 +39,7 @@ final class ApiExceptionSubscriber implements EventSubscriberInterface
             $statusCode = $throwable->getStatusCode();
 
             $error = [
-                'code' => $this->codeForStatus($statusCode),
+                'code' => $this->codeFor($throwable),
                 'message' => '' !== $throwable->getMessage()
                     ? $throwable->getMessage()
                     : Response::$statusTexts[$statusCode] ?? 'HTTP error',
@@ -66,19 +67,25 @@ final class ApiExceptionSubscriber implements EventSubscriberInterface
         $event->setResponse($response);
     }
 
-    private function codeForStatus(int $statusCode): string
+    private function codeFor(HttpExceptionInterface $throwable): string
     {
-        return match ($statusCode) {
+        // domain exceptions carry their own code, no matter which HTTP status they map to
+        if ($throwable instanceof EmailSendingException) {
+            return 'email_failed';
+        }
+
+        return match ($throwable->getStatusCode()) {
             Response::HTTP_BAD_REQUEST => 'bad_request',
             Response::HTTP_UNAUTHORIZED => 'unauthorized',
             Response::HTTP_FORBIDDEN => 'forbidden',
             Response::HTTP_NOT_FOUND => 'not_found',
             Response::HTTP_METHOD_NOT_ALLOWED => 'method_not_allowed',
             Response::HTTP_CONFLICT => 'conflict',
+            Response::HTTP_REQUEST_ENTITY_TOO_LARGE => 'payload_too_large',
             Response::HTTP_UNSUPPORTED_MEDIA_TYPE => 'unsupported_media_type',
             Response::HTTP_UNPROCESSABLE_ENTITY => 'validation_failed',
             Response::HTTP_TOO_MANY_REQUESTS => 'too_many_requests',
-            Response::HTTP_BAD_GATEWAY => 'email_failed',
+            Response::HTTP_BAD_GATEWAY => 'bad_gateway',
             Response::HTTP_SERVICE_UNAVAILABLE => 'service_unavailable',
             default => 'http_error',
         };

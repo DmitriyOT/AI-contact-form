@@ -11,7 +11,10 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
+use Symfony\Component\HttpKernel\Exception\TooManyRequestsHttpException;
 use Symfony\Component\HttpKernel\Exception\UnauthorizedHttpException;
+use Symfony\Component\RateLimiter\RateLimiterFactory;
+use Symfony\Component\RateLimiter\Storage\InMemoryStorage;
 
 final class MetricsControllerTest extends TestCase
 {
@@ -66,14 +69,31 @@ final class MetricsControllerTest extends TestCase
         }
     }
 
-    private function createController(string $token): MetricsController
+    public function testTooManyRequestsWhenLimiterIsExhausted(): void
+    {
+        $controller = $this->createController(self::TOKEN, limit: 1);
+        $controller->index($this->requestWithToken(self::TOKEN));
+
+        $this->expectException(TooManyRequestsHttpException::class);
+        $controller->index($this->requestWithToken(self::TOKEN));
+    }
+
+    private function createController(string $token, int $limit = 100): MetricsController
     {
         $connection = $this->createMock(Connection::class);
         $connection->method('fetchOne')->willReturnOnConsecutiveCalls('7', '3');
         $connection->method('fetchAllKeyValue')->willReturn(['2026-07-22' => '7']);
 
+        $limiterFactory = new RateLimiterFactory([
+            'id' => 'metrics_api',
+            'policy' => 'fixed_window',
+            'limit' => $limit,
+            'interval' => '60 seconds',
+        ], new InMemoryStorage());
+
         return new MetricsController(
             new ContactRepository($connection),
+            $limiterFactory,
             new NullLogger(),
             $token,
         );

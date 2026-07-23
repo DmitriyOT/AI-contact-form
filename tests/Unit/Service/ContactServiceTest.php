@@ -15,6 +15,7 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
+use Symfony\Component\HttpKernel\Exception\ServiceUnavailableHttpException;
 use Symfony\Component\Mailer\Exception\TransportException;
 use Symfony\Component\Mailer\MailerInterface;
 
@@ -53,19 +54,19 @@ final class ContactServiceTest extends TestCase
         self::assertFalse($result->aiProcessed);
     }
 
-    public function testPersistenceFailureDoesNotBreakTheFlow(): void
+    public function testPersistenceFailureFailsFastWith503(): void
     {
         $connection = $this->createMock(Connection::class);
         $connection->method('executeStatement')->willThrowException(new \RuntimeException('db down'));
 
         $mailer = $this->createMock(MailerInterface::class);
-        // both emails must still go out
-        $mailer->expects(self::exactly(2))->method('send');
+        // no email must go out when the record was never persisted (retry stays duplicate-free)
+        $mailer->expects(self::never())->method('send');
 
         $service = $this->createService($connection, $mailer, aiEnabled: false);
-        $result = $service->handle($this->contactRequest());
 
-        self::assertTrue($result->accepted);
+        $this->expectException(ServiceUnavailableHttpException::class);
+        $service->handle($this->contactRequest());
     }
 
     public function testOwnerEmailFailureThrowsEmailSendingException(): void

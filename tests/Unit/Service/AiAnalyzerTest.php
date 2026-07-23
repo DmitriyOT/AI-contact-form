@@ -87,6 +87,17 @@ final class AiAnalyzerTest extends TestCase
         self::assertSame('жалоба', $result['category']);
     }
 
+    public function testParsesJsonFollowedByProseWithBraces(): void
+    {
+        // the widest {…} span would swallow the trailing prose and fail to decode
+        $analyzer = $this->analyzerWithContent('{"sentiment":"negative","category":"жалоба","summary":"Жалоба"} Пояснение: поля {sentiment} и {category} заполнены по правилам.');
+
+        $result = $analyzer->analyze('Всё сломалось!');
+
+        self::assertSame('negative', $result['sentiment']);
+        self::assertSame('жалоба', $result['category']);
+    }
+
     public function testUnknownCategoryFallsBackToOther(): void
     {
         $analyzer = $this->analyzerWithContent('{"sentiment":"neutral","category":"несуществующая","summary":"s"}');

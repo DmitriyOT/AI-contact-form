@@ -29,7 +29,8 @@ final class ContactRequestTest extends TestCase
         ]);
 
         self::assertSame('Иван', $dto->name);
-        self::assertSame('+7 900 123-45-67', $dto->phone);
+        // phone is normalized to the canonical +7XXXXXXXXXX form
+        self::assertSame('+79001234567', $dto->phone);
         // strip_tags removes the tags but keeps the text content
         self::assertSame('ivan@example.com', $dto->email);
         // comment keeps its HTML; it is escaped on output instead
@@ -68,6 +69,46 @@ final class ContactRequestTest extends TestCase
         ]);
 
         self::assertCount(0, $this->validator->validate($dto));
+    }
+
+    public function testPhoneNormalizationToCanonicalForm(): void
+    {
+        $base = ['name' => 'Иван', 'email' => 'ivan@example.com', 'comment' => 'Комментарий достаточной длины.'];
+
+        self::assertSame('+79001234567', ContactRequest::fromArray($base + ['phone' => '8 (900) 123-45-67'])->phone);
+        self::assertSame('+79001234567', ContactRequest::fromArray($base + ['phone' => '+7 900 123 45 67'])->phone);
+        self::assertSame('+79001234567', ContactRequest::fromArray($base + ['phone' => '89001234567'])->phone);
+    }
+
+    public function testOverlongPhoneRejectedBeforeDatabase(): void
+    {
+        // normalization strips separators first, so an overlong phone either shrinks to the
+        // canonical 12-char form or is rejected here — it can never reach the VARCHAR(20) column
+        $dto = ContactRequest::fromArray([
+            'name' => 'Иван',
+            'phone' => '+7' . str_repeat(' ', 30) . '900 123-45-67 89',
+            'email' => 'ivan@example.com',
+            'comment' => 'Комментарий достаточной длины.',
+        ]);
+
+        $violations = $this->validator->validate($dto);
+        self::assertGreaterThan(0, count($violations));
+        self::assertSame('phone', $violations->get(0)->getPropertyPath());
+    }
+
+    public function testOverlongEmailRejectedBeforeDatabase(): void
+    {
+        $dto = ContactRequest::fromArray([
+            'name' => 'Иван',
+            'phone' => '+79001234567',
+            // syntactically valid email longer than the VARCHAR(255) column
+            'email' => str_repeat('a', 250) . '@example.com',
+            'comment' => 'Комментарий достаточной длины.',
+        ]);
+
+        $violations = $this->validator->validate($dto);
+        self::assertGreaterThan(0, count($violations));
+        self::assertSame('email', $violations->get(0)->getPropertyPath());
     }
 
     #[DataProvider('validPhones')]
