@@ -22,6 +22,9 @@ interface ApiErrorBody {
 
 const API_URL: string = import.meta.env.VITE_API_URL ?? '';
 
+// backend worst case: AI timeout (10s) + two SMTP sends — 15s covers it with margin
+const REQUEST_TIMEOUT_MS = 15_000;
+
 /**
  * Отправляет обращение на POST /api/contact и разбирает ответ
  * в едином формате бэкенда {"error":{"code","message","details"}}.
@@ -33,9 +36,16 @@ export async function submitContact(payload: ContactPayload): Promise<SubmitResu
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      // otherwise a hung connection leaves the form in "sending" state forever
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
-  } catch {
-    return { ok: false, type: 'network', message: 'Сервер недоступен, попробуйте позже' };
+  } catch (error) {
+    const isTimeout = error instanceof DOMException && error.name === 'TimeoutError';
+    return {
+      ok: false,
+      type: 'network',
+      message: isTimeout ? 'Сервер не отвечает, попробуйте позже' : 'Сервер недоступен, попробуйте позже',
+    };
   }
 
   if (response.status === 201) {

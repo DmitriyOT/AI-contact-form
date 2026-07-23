@@ -81,6 +81,18 @@ describe('submitContact', () => {
     });
   });
 
+  it('возвращает network с сообщением о таймауте при TimeoutError', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new DOMException('The operation timed out', 'TimeoutError')));
+
+    const result = await submitContact(payload);
+
+    expect(result).toEqual({
+      ok: false,
+      type: 'network',
+      message: 'Сервер не отвечает, попробуйте позже',
+    });
+  });
+
   it('переживает не-JSON тело ошибки', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('<html>error</html>', { status: 500 })));
 
