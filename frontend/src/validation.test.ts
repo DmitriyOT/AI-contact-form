@@ -48,7 +48,12 @@ describe('validateContact', () => {
   });
 
   it('требует каждое поле с отдельным сообщением', () => {
-    const errors = validateContact({ name: '', phone: '', email: '', comment: '' });
+    const errors = validateContact({
+      name: '',
+      phone: '',
+      email: '',
+      comment: '',
+    });
 
     expect(errors).toEqual({
       name: 'Укажите имя',
@@ -68,7 +73,9 @@ describe('validateContact', () => {
     { name: 'И', label: 'короче минимума (1)' },
     { name: 'А'.repeat(101), label: 'длиннее максимума (101)' },
   ])('отклоняет имя: $label', ({ name }) => {
-    expect(validateContact({ ...VALID, name }).name).toBe('Имя должно быть от 2 до 100 символов');
+    expect(validateContact({ ...VALID, name }).name).toBe(
+      'Имя должно быть от 2 до 100 символов',
+    );
   });
 
   it.each([
@@ -82,7 +89,9 @@ describe('validateContact', () => {
     { comment: 'а'.repeat(9), label: 'короче минимума (9)' },
     { comment: 'а'.repeat(2001), label: 'длиннее максимума (2001)' },
   ])('отклоняет комментарий: $label', ({ comment }) => {
-    expect(validateContact({ ...VALID, comment }).comment).toBe('Текст обращения должен быть от 10 до 2000 символов');
+    expect(validateContact({ ...VALID, comment }).comment).toBe(
+      'Текст обращения должен быть от 10 до 2000 символов',
+    );
   });
 
   it.each([
@@ -92,12 +101,12 @@ describe('validateContact', () => {
     expect(validateContact({ ...VALID, comment })).toEqual({});
   });
 
-  it.each([
-    'ivan@',
-    'ivan@example',
-    'ivan example.com',
-    '@example.com',
-  ])('отклоняет некорректный email %s', (email) => {
-    expect(validateContact({ ...VALID, email }).email).toBe('Некорректный email');
-  });
+  it.each(['ivan@', 'ivan@example', 'ivan example.com', '@example.com'])(
+    'отклоняет некорректный email %s',
+    (email) => {
+      expect(validateContact({ ...VALID, email }).email).toBe(
+        'Некорректный email',
+      );
+    },
+  );
 });

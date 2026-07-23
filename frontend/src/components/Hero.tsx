@@ -5,8 +5,13 @@ export function Hero() {
         <p className="hero__eyebrow">Backend-разработчик</p>
         <h1 className="hero__title">Иван Петров</h1>
         <p className="hero__lead">
-          Проектирую и разрабатываю серверную часть веб-приложений: API, интеграции,
-          надёжные и поддерживаемые решения.
+          Проектирую и разрабатываю серверную часть веб-приложений: API,
+          интеграции, надёжные и поддерживаемые решения.
+        </p>
+        <p>
+          <a className="hero__cta" href="#contact">
+            Связаться
+          </a>
         </p>
         <div className="hero__cards">
           <div className="card">
