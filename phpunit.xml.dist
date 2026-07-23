@@ -19,8 +19,9 @@
         <env name="KERNEL_CLASS" value="App\Kernel"/>
         <env name="APP_ENV" value="test" force="true"/>
         <env name="APP_DEBUG" value="1" force="true"/>
-        <!-- separate database (test env appends "_test" via dbname_suffix), root user: the app MySQL user has grants on contact_form.* only -->
-        <env name="DATABASE_URL" value="mysql://root:rootsecret@db:3306/contact_form?serverVersion=8.0&amp;charset=utf8mb4" force="true"/>
+        <!-- separate database (test env appends "_test" via dbname_suffix), root user: the app MySQL user has grants on contact_form.* only.
+             The root password is NOT committed: tests/bootstrap.php builds DATABASE_URL from the DB_ROOT_PASSWORD env var
+             (docker compose passes it through to the app container; outside Docker set it yourself). -->
         <env name="MAILER_DSN" value="null://null" force="true"/>
         <env name="AI_API_KEY" value="" force="true"/>
         <env name="METRICS_TOKEN" value="test-metrics-token" force="true"/>

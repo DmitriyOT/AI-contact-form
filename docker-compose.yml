@@ -3,6 +3,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # dev stage: code comes from the bind mount below, prod stage is self-contained
+      target: dev
     ports:
       # host port 8082 because 8080 is occupied by another local project
       - "8082:8080"
@@ -10,16 +12,32 @@ services:
       # built-in server is single-worker by default and serializes all requests;
       # 4 workers keep the demo usable under concurrent load (fine for dev/demo)
       PHP_CLI_SERVER_WORKERS: 4
+      # tests run inside this container and need the MySQL root user for the _test database
+      DB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-rootsecret}
     volumes:
       - .:/var/www/html
     # .env / .env.local are loaded by Symfony Dotenv from the mounted code
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      # php -S returns HTTP 200 even on fatal errors — check the body, not just the status
+      test:
+        - CMD
+        - php
+        - -r
+        - 'exit(str_contains((string) @file_get_contents("http://127.0.0.1:8080/api/health"), "\"db\":\"up\"") ? 0 : 1);'
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+    restart: unless-stopped
 
   db:
     image: mysql:8
     environment:
+      # dev-only defaults so `docker compose up` works out of the box;
+      # in production set all four variables explicitly via .env / environment
       MYSQL_DATABASE: ${DB_NAME:-contact_form}
       MYSQL_USER: ${DB_USER:-app}
       MYSQL_PASSWORD: ${DB_PASSWORD:-secret}
@@ -40,7 +58,8 @@ services:
     ports:
       - "8084:80"
     depends_on:
-      - app
+      app:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

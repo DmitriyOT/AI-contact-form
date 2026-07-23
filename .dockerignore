@@ -1,0 +1,16 @@
+# keep the build context small and the image free of local/dev artifacts
+.git/
+.github/
+.tools/
+docs/
+loadtest/
+tests/
+frontend/
+var/
+vendor/
+*.md
+.dockerignore
+.env.local
+compose*.yaml
+docker-compose.yml
+Dockerfile
