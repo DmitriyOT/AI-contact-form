@@ -93,6 +93,7 @@ final class ContactController
             'status' => 'accepted',
             'message' => $result->message,
             'ai' => $result->aiProcessed,
+            'analysis' => $result->analysis?->toArray(),
         ], JsonResponse::HTTP_CREATED);
         $response->setEncodingOptions(JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 

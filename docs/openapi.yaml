@@ -45,6 +45,11 @@ paths:
                 status: accepted
                 message: Обращение принято
                 ai: true
+                analysis:
+                  sentiment: neutral
+                  category: вопрос
+                  priority: средний
+                  summary: Клиент интересуется услугами.
         '400':
           description: Невалидный JSON
           content:
@@ -279,6 +284,31 @@ components:
           type: boolean
           description: true — AI-анализ выполнен, false — graceful fallback (AI недоступен/выключен)
           example: true
+        analysis:
+          $ref: '#/components/schemas/AiAnalysis'
+    AiAnalysis:
+      type: object
+      nullable: true
+      description: |
+        Результат AI-анализа обращения; null при graceful fallback (см. поле ai).
+        Черновик ответа (draft_reply) сюда не входит — он внутренний, для службы поддержки.
+      properties:
+        sentiment:
+          type: string
+          enum: [positive, neutral, negative]
+          example: neutral
+        category:
+          type: string
+          enum: [вопрос, заказ, жалоба, предложение, сотрудничество, другое]
+          example: вопрос
+        priority:
+          type: string
+          enum: [низкий, средний, высокий, срочный]
+          example: средний
+        summary:
+          type: string
+          maxLength: 200
+          example: Клиент интересуется услугами.
     Health:
       type: object
       properties:

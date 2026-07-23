@@ -36,6 +36,12 @@ final class ContactServiceTest extends TestCase
         self::assertTrue($result->accepted);
         self::assertSame('Обращение принято', $result->message);
         self::assertTrue($result->aiProcessed);
+        self::assertNotNull($result->analysis);
+        self::assertSame('neutral', $result->analysis->sentiment);
+        self::assertSame('вопрос', $result->analysis->category);
+        // приоритет не задан в ответе AI — безопасный дефолт
+        self::assertSame('средний', $result->analysis->priority);
+        self::assertSame('s', $result->analysis->summary);
     }
 
     public function testAiDisabledResultsInAiProcessedFalse(): void
@@ -52,6 +58,7 @@ final class ContactServiceTest extends TestCase
 
         self::assertTrue($result->accepted);
         self::assertFalse($result->aiProcessed);
+        self::assertNull($result->analysis);
     }
 
     public function testPersistenceFailureFailsFastWith503(): void

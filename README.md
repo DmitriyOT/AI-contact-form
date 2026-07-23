@@ -98,7 +98,8 @@ src/
 │   └── MetricsController.php      # GET /api/metrics: Bearer-авторизация + живые счётчики
 ├── Dto/
 │   ├── ContactRequest.php         # DTO входа: констрейнты + маппинг/санитизация из JSON
-│   └── ContactResult.php          # Результат сервиса (accepted/message/aiProcessed)
+│   ├── ContactResult.php          # Результат сервиса (accepted/message/aiProcessed/analysis)
+│   └── AiAnalysisResult.php       # Публичная часть AI-анализа (без draft_reply) для ответа API
 ├── EventSubscriber/
 │   ├── ApiExceptionSubscriber.php # Единый JSON-формат ошибок для всего API
 │   └── RequestLogSubscriber.php   # Access-лог запросов (метод, путь, статус, IP, мс)
@@ -162,7 +163,9 @@ frontend/
 Реальные ответы (из проверок):
 
 ```
-POST /api/contact  →  201 {"status":"accepted","message":"Обращение принято","ai":true}
+POST /api/contact  →  201 {"status":"accepted","message":"Обращение принято","ai":true,
+  "analysis":{"sentiment":"neutral","category":"вопрос","priority":"средний","summary":"Клиент интересуется услугами."}}
+  (при недоступном AI: "ai":false, "analysis":null)
 
 POST /api/contact {}  →  422
 {"error":{"code":"validation_failed","message":"Ошибка валидации",
@@ -187,7 +190,7 @@ GET /api/metrics -H 'Authorization: Bearer dev-metrics-token'
 
 ## 5. AI-интеграция
 
-Пять функций одним запросом к OpenAI-совместимому Chat Completions API: **тональность** (`positive|neutral|negative`), **классификация типа обращения** (`вопрос|заказ|жалоба|предложение|сотрудничество|другое`), **краткое резюме**, **приоритизация** (`низкий|средний|высокий|срочный`) и **черновик ответа клиенту** (1–3 предложения). Результат сохраняется в БД (`ai_sentiment`, `ai_category`, `ai_summary`, `ai_priority`, `ai_draft_reply`) и включается в письмо владельцу: блок «AI-анализ» с приоритетом и черновиком ответа; при приоритете «высокий»/«срочный» тема письма помечается `[ВЫСОКИЙ]`/`[СРОЧНЫЙ]`. Черновик — именно черновик для владельца, пользователю автоматически ничего не отправляется.
+Пять функций одним запросом к OpenAI-совместимому Chat Completions API: **тональность** (`positive|neutral|negative`), **классификация типа обращения** (`вопрос|заказ|жалоба|предложение|сотрудничество|другое`), **краткое резюме**, **приоритизация** (`низкий|средний|высокий|срочный`) и **черновик ответа клиенту** (1–3 предложения). Результат сохраняется в БД (`ai_sentiment`, `ai_category`, `ai_summary`, `ai_priority`, `ai_draft_reply`), включается в письмо владельцу: блок «AI-анализ» с приоритетом и черновиком ответа (при приоритете «высокий»/«срочный» тема письма помечается `[ВЫСОКИЙ]`/`[СРОЧНЫЙ]`), а его публичная часть (`sentiment`/`category`/`priority`/`summary`) возвращается в ответе POST /api/contact в поле `analysis`. Черновик ответа (`draft_reply`) в API не отдаётся — он внутренний, только для владельца; пользователю автоматически ничего не отправляется.
 
 Промпт (system message, полный текст):
 
@@ -209,7 +212,7 @@ GET /api/metrics -H 'Authorization: Bearer dev-metrics-token'
 
 - `AI_API_KEY` пуст → сервис выключен, `analyze()` сразу null (info в логе один раз);
 - сетевая ошибка / таймаут / 4xx-5xx / невалидный или «мусорный» JSON в ответе → warning в лог (без персональных данных), null;
-- null → поля в БД NULL, письмо без AI-блока, в ответе `"ai": false`.
+- null → поля в БД NULL, письмо без AI-блока, в ответе `"ai": false, "analysis": null`.
 
 **Смена провайдера** — только через env (`AI_BASE_URL`/`AI_API_KEY`/`AI_MODEL`): OpenAI, OpenRouter, Groq, корпоративный прокси. Для локальной демонстрации без ключа в compose есть сервис **ai-mock** (`docker/ai-mock/`) — минимальный OpenAI-совместимый ответчик с «анализом» по ключевым словам (только для dev/демо, помечено в коде).
 

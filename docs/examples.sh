@@ -18,7 +18,7 @@ echo '=== 3. Metrics с Bearer-токеном -> 200 ==='
 curl -s -w '\nHTTP %{http_code}\n' "$BASE/api/metrics" \
   -H "Authorization: Bearer $METRICS_TOKEN"
 
-echo '=== 4. Валидное обращение -> 201 (ai: true/false в зависимости от AI) ==='
+echo '=== 4. Валидное обращение -> 201 (ai: true/false и analysis: объект/null в зависимости от AI) ==='
 curl -s -w '\nHTTP %{http_code}\n' -X POST "$BASE/api/contact" \
   -H 'Content-Type: application/json' \
   -d '{"name":"Ivan Ivanov","phone":"+7 900 123-45-67","email":"ivan@example.com","comment":"I would like to know more about your services."}'

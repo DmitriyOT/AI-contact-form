@@ -7,6 +7,9 @@ namespace App\Tests\Functional;
 use Doctrine\DBAL\Connection;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\HttpClient\MockHttpClient;
+use Symfony\Component\HttpClient\Response\MockResponse;
+use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 final class ContactApiTest extends WebTestCase
 {
@@ -37,6 +40,7 @@ final class ContactApiTest extends WebTestCase
         self::assertSame('Обращение принято', $data['message']);
         // AI_API_KEY is empty in the test env: graceful fallback
         self::assertFalse($data['ai']);
+        self::assertNull($data['analysis']);
 
         $row = $this->connection->fetchAssociative('SELECT * FROM contacts');
         self::assertNotFalse($row);
@@ -47,6 +51,58 @@ final class ContactApiTest extends WebTestCase
         self::assertNull($row['ai_priority']);
         self::assertNull($row['ai_draft_reply']);
         self::assertSame('127.0.0.1', $row['ip_address']);
+    }
+
+    public function testSuccessfulAiAnalysisIsIncludedInResponse(): void
+    {
+        // AI_API_KEY is forced empty for the test env — enable AI for this test only
+        $this->overrideEnv('AI_API_KEY', 'test-key');
+        // setUp() already booted a kernel — shut it down so the new one picks up the override
+        self::ensureKernelShutdown();
+
+        try {
+            $client = static::createClient();
+            // replace the HTTP client before AiAnalyzer is instantiated
+            static::getContainer()->set(HttpClientInterface::class, new MockHttpClient([
+                new MockResponse(json_encode([
+                    'choices' => [['message' => ['content' => json_encode([
+                        'sentiment' => 'positive',
+                        'category' => 'вопрос',
+                        'summary' => 'Клиент интересуется услугами.',
+                        'priority' => 'средний',
+                        'draft_reply' => 'Спасибо за обращение, мы свяжемся с вами!',
+                    ])]]],
+                ])),
+            ]));
+
+            $client->request('POST', '/api/contact', [], [], ['CONTENT_TYPE' => 'application/json'], json_encode([
+                'name' => 'Иван Иванов',
+                'phone' => '+7 900 123-45-67',
+                'email' => 'ivan@example.com',
+                'comment' => 'Хочу узнать подробнее о ваших услугах.',
+            ], JSON_UNESCAPED_UNICODE));
+
+            self::assertResponseStatusCodeSame(201);
+            $data = json_decode((string) $client->getResponse()->getContent(), true);
+            self::assertSame('accepted', $data['status']);
+            self::assertTrue($data['ai']);
+            self::assertSame([
+                'sentiment' => 'positive',
+                'category' => 'вопрос',
+                'priority' => 'средний',
+                'summary' => 'Клиент интересуется услугами.',
+            ], $data['analysis']);
+            // draft_reply is internal (support only) and must not leak into the API response
+            self::assertArrayNotHasKey('draft_reply', $data['analysis']);
+            self::assertArrayNotHasKey('draft_reply', $data);
+
+            // …but it is still persisted for the owner notification
+            $row = static::getContainer()->get(Connection::class)->fetchAssociative('SELECT * FROM contacts');
+            self::assertNotFalse($row);
+            self::assertSame('Спасибо за обращение, мы свяжемся с вами!', $row['ai_draft_reply']);
+        } finally {
+            $this->overrideEnv('AI_API_KEY', '');
+        }
     }
 
     public function testUnknownFieldsAreIgnored(): void

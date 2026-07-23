@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Service;
 
+use App\Dto\AiAnalysisResult;
 use App\Dto\ContactRequest;
 use App\Dto\ContactResult;
 use App\Exception\EmailSendingException;
@@ -61,6 +62,11 @@ final class ContactService
         // no personal data in the log, just the fact of acceptance
         $this->logger->info('Contact request accepted', ['id' => $contactId, 'ai' => null !== $aiData]);
 
-        return new ContactResult(true, 'Обращение принято', null !== $aiData);
+        return new ContactResult(
+            true,
+            'Обращение принято',
+            null !== $aiData,
+            null !== $aiData ? AiAnalysisResult::fromArray($aiData) : null,
+        );
     }
 }
